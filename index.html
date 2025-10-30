@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Culinary Quality Control</title>
+    <style>
+        html.dark body {
+            background-color: #111827; /* Corresponds to dark:bg-gray-900 */
+            color: #d1d5db; /* Corresponds to dark:text-gray-300 */
+        }
+    </style>
+    <script>
+        tailwind.config = {
+          darkMode: 'class',
+        }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js" type="module"></script>
+</head>
+<body>
+    <div id="app-container">
+        <!-- App Header -->
+        <header class="bg-gray-900 shadow-md sticky top-0 z-50">
+            <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <h1 class="text-xl font-bold text-white">Culinary Quality Control</h1>
+                    <div class="flex items-center space-x-3">
+                        <button id="export-details-btn" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors duration-200 text-gray-300 bg-gray-700 hover:bg-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            <span class="hidden sm:inline">Export Details</span>
+                        </button>
+                        <button id="export-summary-btn" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors duration-200 text-gray-300 bg-gray-700 hover:bg-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <span class="hidden sm:inline">Export Summary</span>
+                        </button>
+                        <button id="settings-btn" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors duration-200 text-white bg-indigo-600 hover:bg-indigo-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                            <span class="hidden sm:inline">Settings</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="p-4 md:p-8">
+            <!-- Loading Indicator -->
+            <div id="loading-indicator" class="text-center p-8 hidden">Loading data...</div>
+            
+            <!-- Main View (Date Selector + Grid) -->
+            <div id="main-view">
+                <!-- Date Selector -->
+                <div id="date-selector-container" class="flex items-center justify-between mb-8 bg-gray-800 p-3 rounded-xl shadow-md">
+                    <button id="prev-week-btn" class="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Previous week">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <div id="date-buttons-container" class="flex items-center justify-center space-x-1 sm:space-x-2"></div>
+                    <button id="next-week-btn" class="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Next week">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+                
+                <!-- Dish Grid -->
+                <div id="dish-selection-view">
+                    <h2 class="text-2xl font-bold mb-6 text-white">Select a Dish</h2>
+                    <div id="dish-grid-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+                </div>
+                
+                <!-- Welcome/No Menu Placeholder -->
+                <div id="welcome-placeholder" class="hidden"></div>
+            </div>
+
+            <!-- Dish Detail View -->
+            <div id="dish-detail-view" class="hidden">
+                 <button id="back-to-menu-btn" class="flex items-center gap-2 px-4 py-2 mb-6 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-colors duration-200 bg-gray-700 text-gray-200 hover:bg-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    Back to Menu
+                </button>
+                <div id="dish-card-container" class="max-w-4xl mx-auto"></div>
+            </div>
+        </main>
+        
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
+            <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-full overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-white">Settings</h2>
+                        <button id="settings-close-btn" class="text-gray-400 hover:text-gray-200 text-3xl">&times;</button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="json-input" class="block text-sm font-medium text-gray-300 mb-1">Paste Weekly Menu (JSON)</label>
+                            <textarea id="json-input" rows="15" class="w-full p-2 border rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-700 border-gray-600 text-white font-mono text-xs"></textarea>
+                        </div>
+                        <p id="settings-error" class="text-red-500 text-sm"></p>
+                    </div>
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button id="settings-cancel-btn" class="px-4 py-2 text-sm font-medium rounded-md bg-gray-600 text-gray-200 hover:bg-gray-500">Cancel</button>
+                        <button id="settings-save-btn" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Save Menu</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="index.js" type="module"></script>
+</body>
+</html>
