@@ -1,7 +1,6 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
-import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -487,6 +486,8 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             alert('Please add your Gemini API Key in the Settings modal.');
             throw new Error('API Key is missing.');
         }
+        
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -496,51 +497,65 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             Promise.resolve(capturedImageDataUrl.split(',')[1])
         ]);
 
-        const ai = new GoogleGenAI({ apiKey: apiKey });
-
         const ingredientsList = dish.dishIngredients.map(ing => `${ing.name} (${ing.weight})`).join(', ');
         const promptText = `As a culinary quality control expert, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
         The expected ingredients are: ${ingredientsList}.
-        Based on your comparison, provide the following in JSON format:
-        1. A quality score (0-10) for presentation, portioning, and ingredient accuracy.
-        2. A list of 2-3 positive aspects.
-        3. A list of 2-3 specific, constructive improvements.
-        4. A brief overall summary.`;
-
-        const responseSchema = {
-            type: Type.OBJECT,
-            properties: {
-                score: { type: Type.NUMBER, description: 'A quality score from 0 to 10.' },
-                positives: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'A list of positive aspects of the dish presentation.' },
-                improvements: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'A list of aspects that could be improved.' },
-                overall_comment: { type: Type.STRING, description: 'A brief overall summary of the quality check.' }
-            },
-            required: ['score', 'positives', 'improvements', 'overall_comment'],
-        };
+        Based on your comparison, use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary.`;
         
-        const refImagePart = { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } };
-        const capturedImagePart = { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } };
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { 
+        const requestBody = {
+            contents: [{
                 parts: [
                     { text: "Reference Image:" },
-                    refImagePart,
+                    { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } },
                     { text: "Captured Image:" },
-                    capturedImagePart,
+                    { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } },
                     { text: promptText }
-                ] 
-            },
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: responseSchema,
-            },
+                ]
+            }],
+            tools: [{
+                functionDeclarations: [{
+                    name: "quality_check_tool",
+                    description: "Extracts the quality check information from the analysis.",
+                    parameters: {
+                        type: "OBJECT",
+                        properties: {
+                            score: { type: "NUMBER", description: "A quality score from 0 to 10." },
+                            positives: { type: "ARRAY", items: { type: "STRING" }, description: "A list of positive aspects of the dish presentation." },
+                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of aspects that could be improved." },
+                            overall_comment: { type: "STRING", description: "A brief overall summary of the quality check." }
+                        },
+                        required: ["score", "positives", "improvements", "overall_comment"]
+                    }
+                }]
+            }],
+            toolConfig: {
+                functionCallingConfig: { "mode": "ANY" }
+            }
+        };
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
         });
 
-        const feedbackData = JSON.parse(response.text);
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error("API Error:", errorBody);
+            throw new Error(`API returned status ${response.status}: ${errorBody.error?.message || 'Unknown error'}`);
+        }
+
+        const responseData = await response.json();
+        const functionCall = responseData.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+        
+        if (!functionCall || !functionCall.args) {
+            console.error("Invalid API response structure:", responseData);
+            throw new Error("AI did not return the expected analysis structure.");
+        }
+
+        const feedbackData = functionCall.args;
         if (form) {
-            form.dataset.aiFeedback = response.text;
+            form.dataset.aiFeedback = JSON.stringify(feedbackData);
         }
         renderAiFeedback(feedbackData);
 
