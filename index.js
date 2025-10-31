@@ -1,6 +1,3 @@
-
-
-import { GoogleGenAI, Type } from 'https://esm.run/@google/genai';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -494,12 +491,18 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     try {
         const apiKey = localStorage.getItem('geminiApiKey');
         if (!apiKey) {
-            feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> Gemini API Key not found.</p><p class="text-xs mt-1">Please set your API key in the settings.</p></div>`;
+            DOMElements.settingsError.textContent = 'Please set your Gemini API key to use the AI Check feature.';
+            DOMElements.settingsModal.classList.remove('hidden');
+            
+            // Reset UI
             buttonElement.disabled = false;
             buttonElement.innerHTML = originalContent;
+            feedbackContainer.classList.add('hidden');
+            feedbackContainer.innerHTML = '';
             return;
         }
-        const ai = new GoogleGenAI({ apiKey });
+        
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -514,8 +517,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         The expected ingredients are: ${ingredientsList}.
         Based on your comparison, use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary.`;
         
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const requestBody = {
             contents: [{
                 parts: [
                     { text: "Reference Image:" },
@@ -525,30 +527,44 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
                     { text: promptText }
                 ]
             }],
-            config: {
-                tools: [{
-                    functionDeclarations: [{
-                        name: "quality_check_tool",
-                        description: "Extracts the quality check information from the analysis.",
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                score: { type: Type.NUMBER, description: "A quality score from 0 to 10." },
-                                positives: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of positive aspects of the dish presentation." },
-                                improvements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of aspects that could be improved." },
-                                overall_comment: { type: Type.STRING, description: "A brief overall summary of the quality check." }
-                            },
-                            required: ["score", "positives", "improvements", "overall_comment"]
-                        }
-                    }]
-                }],
+            tools: [{
+                functionDeclarations: [{
+                    name: "quality_check_tool",
+                    description: "Extracts the quality check information from the analysis.",
+                    parameters: {
+                        type: "OBJECT",
+                        properties: {
+                            score: { type: "NUMBER", description: "A quality score from 0 to 10." },
+                            positives: { type: "ARRAY", items: { type: "STRING" }, description: "A list of positive aspects of the dish presentation." },
+                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of aspects that could be improved." },
+                            overall_comment: { type: "STRING", description: "A brief overall summary of the quality check." }
+                        },
+                        required: ["score", "positives", "improvements", "overall_comment"]
+                    }
+                }]
+            }],
+            toolConfig: {
+                functionCallingConfig: { "mode": "ANY" }
             }
+        };
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
         });
 
-        const functionCall = response.functionCalls?.[0];
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error("API Error:", errorBody);
+            throw new Error(`API returned status ${response.status}: ${errorBody.error?.message || 'Unknown error'}`);
+        }
+
+        const responseData = await response.json();
+        const functionCall = responseData.candidates?.[0]?.content?.parts?.[0]?.functionCall;
         
         if (!functionCall || !functionCall.args) {
-            console.error("Invalid API response structure:", response);
+            console.error("Invalid API response structure:", responseData);
             throw new Error("AI did not return the expected analysis structure.");
         }
 
