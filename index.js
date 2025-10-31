@@ -1,3 +1,4 @@
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
@@ -48,6 +49,7 @@ const DOMElements = {
     settingsCloseBtn: document.getElementById('settings-close-btn'),
     settingsCancelBtn: document.getElementById('settings-cancel-btn'),
     settingsSaveBtn: document.getElementById('settings-save-btn'),
+    apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
 };
@@ -480,6 +482,12 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
 
 
     try {
+        const apiKey = localStorage.getItem('geminiApiKey');
+        if (!apiKey) {
+            alert('Please add your Gemini API Key in the Settings modal.');
+            throw new Error('API Key is missing.');
+        }
+
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
                 console.error("Reference image fetch error:", e);
@@ -488,7 +496,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             Promise.resolve(capturedImageDataUrl.split(',')[1])
         ]);
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: apiKey });
 
         const ingredientsList = dish.dishIngredients.map(ing => `${ing.name} (${ing.weight})`).join(', ');
         const promptText = `As a culinary quality control expert, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
@@ -580,12 +588,15 @@ function renderAiFeedback(feedbackData) {
 // --- Event Listeners ---
 function setupEventListeners() {
     // Header
-    DOMElements.settingsBtn.onclick = () => DOMElements.settingsModal.classList.remove('hidden');
+    DOMElements.settingsBtn.onclick = () => {
+        DOMElements.apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
+        DOMElements.settingsModal.classList.remove('hidden');
+    };
     
     // Settings Modal
     DOMElements.settingsCloseBtn.onclick = () => DOMElements.settingsModal.classList.add('hidden');
     DOMElements.settingsCancelBtn.onclick = () => DOMElements.settingsModal.classList.add('hidden');
-    DOMElements.settingsSaveBtn.onclick = handleSaveMenu;
+    DOMElements.settingsSaveBtn.onclick = handleSaveSettings;
 
     // Date Selector
     DOMElements.prevWeekBtn.onclick = () => changeWeek('prev');
@@ -595,9 +606,25 @@ function setupEventListeners() {
     DOMElements.backToMenuBtn.onclick = showMainView;
 }
 
-function handleSaveMenu() {
+function handleSaveSettings() {
+    // Save API Key
+    const apiKey = DOMElements.apiKeyInput.value.trim();
+    if (apiKey) {
+        localStorage.setItem('geminiApiKey', apiKey);
+    } else {
+        localStorage.removeItem('geminiApiKey');
+    }
+
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
+    
+    if (!jsonInput.value.trim()) {
+        alert('Settings saved.');
+        DOMElements.settingsModal.classList.add('hidden');
+        errorEl.textContent = '';
+        return;
+    }
+    
     try {
         const parsed = JSON.parse(jsonInput.value);
         if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.dishes) || !parsed.startDate) {
@@ -655,7 +682,7 @@ function handleSaveMenu() {
         
         const menuWeekId = getWeekId(new Date(newMenu.startDate + 'T12:00:00Z'));
         set(ref(database, `menus/${menuWeekId}`), newMenu).then(() => {
-            alert('Menu saved successfully!');
+            alert('Settings and Menu saved successfully!');
             DOMElements.settingsModal.classList.add('hidden');
             jsonInput.value = '';
             errorEl.textContent = '';
