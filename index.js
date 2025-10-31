@@ -50,6 +50,7 @@ const DOMElements = {
     settingsCloseBtn: document.getElementById('settings-close-btn'),
     settingsCancelBtn: document.getElementById('settings-cancel-btn'),
     settingsSaveBtn: document.getElementById('settings-save-btn'),
+    apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
 };
@@ -491,7 +492,14 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
 
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const apiKey = localStorage.getItem('geminiApiKey');
+        if (!apiKey) {
+            feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> Gemini API Key not found.</p><p class="text-xs mt-1">Please set your API key in the settings.</p></div>`;
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = originalContent;
+            return;
+        }
+        const ai = new GoogleGenAI({ apiKey });
 
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -595,6 +603,7 @@ function renderAiFeedback(feedbackData) {
 function setupEventListeners() {
     // Header
     DOMElements.settingsBtn.onclick = () => {
+        DOMElements.apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
         DOMElements.settingsModal.classList.remove('hidden');
     };
     
@@ -612,10 +621,19 @@ function setupEventListeners() {
 }
 
 function handleSaveSettings() {
+    // Save API Key
+    const apiKey = DOMElements.apiKeyInput.value.trim();
+    if (apiKey) {
+        localStorage.setItem('geminiApiKey', apiKey);
+    } else {
+        localStorage.removeItem('geminiApiKey');
+    }
+
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
     
     if (!jsonInput.value.trim()) {
+        alert('Settings saved.');
         DOMElements.settingsModal.classList.add('hidden');
         errorEl.textContent = '';
         return;
