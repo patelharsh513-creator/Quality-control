@@ -1,4 +1,6 @@
 
+
+import { GoogleGenAI, Type } from 'https://esm.run/@google/genai';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -48,7 +50,6 @@ const DOMElements = {
     settingsCloseBtn: document.getElementById('settings-close-btn'),
     settingsCancelBtn: document.getElementById('settings-cancel-btn'),
     settingsSaveBtn: document.getElementById('settings-save-btn'),
-    apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
 };
@@ -190,10 +191,17 @@ function renderDishCard() {
         weights: ['', '', ''],
         comment: '',
         aiCheckResult: null,
+        timestamp: null,
     };
 
     const headerBgClass = dish.dishType === 'hot' ? 'bg-red-900/50' : dish.dishType === 'cold' ? 'bg-blue-900/50' : 'bg-gray-900/50';
     
+    let timestampHTML = '';
+    if (formData.timestamp) {
+        const checkedTime = new Date(formData.timestamp).toLocaleString();
+        timestampHTML = `<p class="text-xs text-gray-400 mt-1">Last checked: ${checkedTime}</p>`;
+    }
+
     let ingredientsHTML = dish.dishIngredients.map(ing => `
         <label class="flex items-center space-x-2 text-sm p-2 rounded-md bg-gray-700 text-gray-200">
             <input type="checkbox" name="selectedIngredients" value="${ing.name}" class="h-4 w-4 text-indigo-500 bg-gray-600 border-gray-500 rounded focus:ring-indigo-400 focus:ring-offset-gray-800" ${(formData.selectedIngredients || []).includes(ing.name) ? 'checked' : ''}>
@@ -205,6 +213,7 @@ function renderDishCard() {
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             <div class="p-4 ${headerBgClass}">
                 <h3 class="text-lg font-bold text-indigo-400">${dish.dishLetter} - ${dish.dishName}</h3>
+                ${timestampHTML}
             </div>
             <form id="dish-form" class="p-4 space-y-6">
                 <!-- Image Section -->
@@ -289,6 +298,7 @@ function renderDishCard() {
             weights: data.getAll('weights'),
             comment: data.get('comment'),
             aiCheckResult: formEl.dataset.aiFeedback ? JSON.parse(formEl.dataset.aiFeedback) : null,
+            timestamp: new Date().toISOString(),
         };
         
         saveCheckData(checkData);
@@ -481,13 +491,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
 
 
     try {
-        const apiKey = localStorage.getItem('geminiApiKey');
-        if (!apiKey) {
-            alert('Please add your Gemini API Key in the Settings modal.');
-            throw new Error('API Key is missing.');
-        }
-        
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -502,7 +506,8 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         The expected ingredients are: ${ingredientsList}.
         Based on your comparison, use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary.`;
         
-        const requestBody = {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
             contents: [{
                 parts: [
                     { text: "Reference Image:" },
@@ -512,44 +517,30 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
                     { text: promptText }
                 ]
             }],
-            tools: [{
-                functionDeclarations: [{
-                    name: "quality_check_tool",
-                    description: "Extracts the quality check information from the analysis.",
-                    parameters: {
-                        type: "OBJECT",
-                        properties: {
-                            score: { type: "NUMBER", description: "A quality score from 0 to 10." },
-                            positives: { type: "ARRAY", items: { type: "STRING" }, description: "A list of positive aspects of the dish presentation." },
-                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of aspects that could be improved." },
-                            overall_comment: { type: "STRING", description: "A brief overall summary of the quality check." }
-                        },
-                        required: ["score", "positives", "improvements", "overall_comment"]
-                    }
-                }]
-            }],
-            toolConfig: {
-                functionCallingConfig: { "mode": "ANY" }
+            config: {
+                tools: [{
+                    functionDeclarations: [{
+                        name: "quality_check_tool",
+                        description: "Extracts the quality check information from the analysis.",
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                score: { type: Type.NUMBER, description: "A quality score from 0 to 10." },
+                                positives: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of positive aspects of the dish presentation." },
+                                improvements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of aspects that could be improved." },
+                                overall_comment: { type: Type.STRING, description: "A brief overall summary of the quality check." }
+                            },
+                            required: ["score", "positives", "improvements", "overall_comment"]
+                        }
+                    }]
+                }],
             }
-        };
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
         });
 
-        if (!response.ok) {
-            const errorBody = await response.json();
-            console.error("API Error:", errorBody);
-            throw new Error(`API returned status ${response.status}: ${errorBody.error?.message || 'Unknown error'}`);
-        }
-
-        const responseData = await response.json();
-        const functionCall = responseData.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+        const functionCall = response.functionCalls?.[0];
         
         if (!functionCall || !functionCall.args) {
-            console.error("Invalid API response structure:", responseData);
+            console.error("Invalid API response structure:", response);
             throw new Error("AI did not return the expected analysis structure.");
         }
 
@@ -604,7 +595,6 @@ function renderAiFeedback(feedbackData) {
 function setupEventListeners() {
     // Header
     DOMElements.settingsBtn.onclick = () => {
-        DOMElements.apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
         DOMElements.settingsModal.classList.remove('hidden');
     };
     
@@ -622,19 +612,10 @@ function setupEventListeners() {
 }
 
 function handleSaveSettings() {
-    // Save API Key
-    const apiKey = DOMElements.apiKeyInput.value.trim();
-    if (apiKey) {
-        localStorage.setItem('geminiApiKey', apiKey);
-    } else {
-        localStorage.removeItem('geminiApiKey');
-    }
-
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
     
     if (!jsonInput.value.trim()) {
-        alert('Settings saved.');
         DOMElements.settingsModal.classList.add('hidden');
         errorEl.textContent = '';
         return;
