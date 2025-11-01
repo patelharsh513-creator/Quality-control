@@ -1,5 +1,7 @@
+
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -68,6 +70,26 @@ const getStartOfWeek = (date) => {
     return new Date(d.setDate(diff));
 };
 
+const getWeekDates = (anyDateInWeek) => {
+    const start = getStartOfWeek(new Date(anyDateInWeek + 'T12:00:00Z'));
+    return Array.from({ length: 5 }).map((_, i) => {
+        const day = new Date(start);
+        day.setDate(start.getDate() + i);
+        return day.toISOString().split('T')[0];
+    });
+};
+
+function downloadFile(content, fileName, mimeType) {
+    const a = document.createElement('a');
+    const blob = new Blob([content], { type: mimeType });
+    a.href = URL.createObjectURL(blob);
+    a.setAttribute('download', fileName);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+
 async function urlToBase64(url) {
     // Use a CORS proxy to bypass browser cross-origin restrictions on fetching images.
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
@@ -105,8 +127,8 @@ function renderApp() {
     const isExportDisabled = !state.menu || state.menu.dishes.length === 0;
     DOMElements.exportDetailsBtn.disabled = isExportDisabled;
     DOMElements.exportSummaryBtn.disabled = isExportDisabled;
-    DOMElements.exportDetailsBtn.classList.toggle('bg-gray-500', isExportDisabled);
-    DOMElements.exportSummaryBtn.classList.toggle('bg-gray-500', isExportDisabled);
+    DOMElements.exportDetailsBtn.classList.toggle('opacity-50', isExportDisabled);
+    DOMElements.exportSummaryBtn.classList.toggle('opacity-50', isExportDisabled);
 }
 
 function renderDateSelector() {
@@ -160,7 +182,7 @@ function renderDishSelectionGrid() {
         let checkmarkHTML = '';
         if (isChecked) {
             checkmarkHTML = `<div class="absolute top-2 right-2 text-green-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <svg xmlns="http://www.w.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </div>`;
         }
 
@@ -187,6 +209,7 @@ function renderDishCard() {
         selectedIngredients: [],
         temperatures: ['', '', ''],
         weights: ['', '', ''],
+        totalWeight: '',
         comment: '',
         aiCheckResult: null,
         timestamp: null,
@@ -245,6 +268,11 @@ function renderDishCard() {
                             ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                     </div>
+                     <div class="mt-4">
+                        <p class="text-sm font-medium text-gray-200">Total Weight (g)</p>
+                        <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
+                        <input type="number" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
+                    </div>
                 </div>
                 <!-- Comment Section -->
                 <div>
@@ -294,6 +322,7 @@ function renderDishCard() {
             selectedIngredients: data.getAll('selectedIngredients'),
             temperatures: data.getAll('temperatures'),
             weights: data.getAll('weights'),
+            totalWeight: data.get('totalWeight'),
             comment: data.get('comment'),
             aiCheckResult: formEl.dataset.aiFeedback ? JSON.parse(formEl.dataset.aiFeedback) : null,
             timestamp: new Date().toISOString(),
@@ -614,6 +643,118 @@ function renderAiFeedback(feedbackData) {
     container.classList.remove('hidden');
 }
 
+// --- Export Functions ---
+
+async function handleExportDetails(button) {
+    const originalContent = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
+
+    try {
+        const weekDates = getWeekDates(state.selectedDate);
+        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)));
+        const weekSnapshots = await Promise.all(weekDataPromises);
+
+        const allChecks = [];
+        weekSnapshots.forEach(snapshot => {
+            const dailyData = snapshot.val();
+            if (dailyData) {
+                Object.values(dailyData).forEach(check => allChecks.push(check));
+            }
+        });
+
+        if (allChecks.length === 0) {
+            alert("No quality check data found for the selected week to export.");
+            return;
+        }
+
+        const headers = ["Date", "Dish Letter", "Dish Name", "Timestamp", "Temp 1", "Temp 2", "Temp 3", "Weight 1", "Weight 2", "Weight 3", "Total Measured Weight", "Checked Ingredients", "Comment", "AI Score", "AI Positives", "AI Improvements", "AI Summary"];
+        
+        const dishMap = new Map(state.menu.dishes.map(d => [d.dishLetter, d.dishName]));
+
+        const rows = allChecks.map(check => {
+            const { date, dishLetter, timestamp, temperatures, weights, totalWeight, selectedIngredients, comment, aiCheckResult } = check;
+            const dishName = dishMap.get(dishLetter) || 'Unknown';
+            const safeComment = `"${(comment || '').replace(/"/g, '""')}"`;
+            const safeAiPositives = `"${(aiCheckResult?.positives?.join(', ') || '').replace(/"/g, '""')}"`;
+            const safeAiImprovements = `"${(aiCheckResult?.improvements?.join(', ') || '').replace(/"/g, '""')}"`;
+            const safeAiSummary = `"${(aiCheckResult?.overall_comment || '').replace(/"/g, '""')}"`;
+            const safeIngredients = `"${(selectedIngredients?.join(', ') || '').replace(/"/g, '""')}"`;
+            
+            return [
+                date, dishLetter, dishName, new Date(timestamp).toLocaleString(),
+                temperatures?.[0] || '', temperatures?.[1] || '', temperatures?.[2] || '',
+                weights?.[0] || '', weights?.[1] || '', weights?.[2] || '', totalWeight || '',
+                safeIngredients, safeComment, aiCheckResult?.score || '',
+                safeAiPositives, safeAiImprovements, safeAiSummary
+            ].join(',');
+        });
+
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
+        downloadFile(csvContent, `CQC_Details_${weekId}.csv`, 'text/csv');
+
+    } catch (error) {
+        console.error("Failed to export details:", error);
+        alert("An error occurred during export. Please check the console.");
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalContent;
+    }
+}
+
+async function handleExportSummary(button) {
+    const originalContent = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
+
+    try {
+        const weekDates = getWeekDates(state.selectedDate);
+        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)).then(s => ({ date, data: s.val() || {} })));
+        const dailyResults = await Promise.all(weekDataPromises);
+        
+        const allDishes = state.menu.dishes.sort((a,b) => a.dishLetter.localeCompare(b.dishLetter));
+        if (allDishes.length === 0) {
+             alert("No menu dishes found for the selected week to export.");
+            return;
+        }
+
+        const headers = ["Date", "Dish Letter", "Dish Name", "Status", "AI Score", "Key Issues"];
+        const rows = [];
+
+        dailyResults.forEach(({ date, data }) => {
+            allDishes.forEach(dish => {
+                const check = data[dish.dishLetter];
+                let status, score, issues;
+
+                if (check) {
+                    status = "Checked";
+                    score = check.aiCheckResult?.score || 'N/A';
+                    const improvementIssues = check.aiCheckResult?.improvements?.join('; ') || '';
+                    const commentIssues = check.comment || '';
+                    issues = [improvementIssues, commentIssues].filter(Boolean).join(' | ');
+                } else {
+                    status = "Not Checked";
+                    score = '';
+                    issues = '';
+                }
+                rows.push([date, dish.dishLetter, dish.dishName, status, score, `"${issues.replace(/"/g, '""')}"`].join(','));
+            });
+        });
+
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
+        downloadFile(csvContent, `CQC_Summary_${weekId}.csv`, 'text/csv');
+
+    } catch (error) {
+        console.error("Failed to export summary:", error);
+        alert("An error occurred during export. Please check the console.");
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalContent;
+    }
+}
+
 
 // --- Event Listeners ---
 function setupEventListeners() {
@@ -622,6 +763,8 @@ function setupEventListeners() {
         DOMElements.apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
         DOMElements.settingsModal.classList.remove('hidden');
     };
+    DOMElements.exportDetailsBtn.onclick = (e) => handleExportDetails(e.currentTarget);
+    DOMElements.exportSummaryBtn.onclick = (e) => handleExportSummary(e.currentTarget);
     
     // Settings Modal
     DOMElements.settingsCloseBtn.onclick = () => DOMElements.settingsModal.classList.add('hidden');
@@ -694,13 +837,22 @@ function handleSaveSettings() {
 
         const dishes = parsed.dishes
             .filter(d => d.stickerNo && d.stickerNo !== 'addons')
-            .map(d => ({
-                dishLetter: d.stickerNo,
-                dishName: d.variantName,
-                dishImage: d.webUrl,
-                dishIngredients: extractIngredients(d.ingredients),
-                dishType: ['hot', 'cold'].includes(d.type) ? d.type : 'unknown',
-            }));
+            .map(d => {
+                const ingredients = extractIngredients(d.ingredients);
+                const theoreticalWeight = ingredients.reduce((sum, ing) => {
+                    const weightValue = parseFloat(ing.weight);
+                    return sum + (isNaN(weightValue) ? 0 : weightValue);
+                }, 0);
+
+                return {
+                    dishLetter: d.stickerNo,
+                    dishName: d.variantName,
+                    dishImage: d.webUrl,
+                    dishIngredients: ingredients,
+                    dishType: ['hot', 'cold'].includes(d.type) ? d.type : 'unknown',
+                    theoreticalWeight: theoreticalWeight,
+                };
+            });
 
         const newMenu = {
             id: parsed.id || `menu-${parsed.startDate}`,
