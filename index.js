@@ -79,17 +79,6 @@ const getWeekDates = (anyDateInWeek) => {
     });
 };
 
-function downloadFile(content, fileName, mimeType) {
-    const a = document.createElement('a');
-    const blob = new Blob([content], { type: mimeType });
-    a.href = URL.createObjectURL(blob);
-    a.setAttribute('download', fileName);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-}
-
-
 async function urlToBase64(url) {
     // Use a CORS proxy to bypass browser cross-origin restrictions on fetching images.
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
@@ -182,7 +171,7 @@ function renderDishSelectionGrid() {
         let checkmarkHTML = '';
         if (isChecked) {
             checkmarkHTML = `<div class="absolute top-2 right-2 text-green-500">
-                <svg xmlns="http://www.w.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </div>`;
         }
 
@@ -269,7 +258,7 @@ function renderDishCard() {
                         </div>
                     </div>
                      <div class="mt-4">
-                        <p class="text-sm font-medium text-gray-200">Total Weight (g)</p>
+                        <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
                         <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
                         <input type="number" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
@@ -651,6 +640,11 @@ async function handleExportDetails(button) {
     button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
 
     try {
+        if (!state.menu || !state.menu.dishes) {
+            alert("Menu data is not loaded. Cannot generate details.");
+            return;
+        }
+        
         const weekDates = getWeekDates(state.selectedDate);
         const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)));
         const weekSnapshots = await Promise.all(weekDataPromises);
@@ -675,24 +669,23 @@ async function handleExportDetails(button) {
         const rows = allChecks.map(check => {
             const { date, dishLetter, timestamp, temperatures, weights, totalWeight, selectedIngredients, comment, aiCheckResult } = check;
             const dishName = dishMap.get(dishLetter) || 'Unknown';
-            const safeComment = `"${(comment || '').replace(/"/g, '""')}"`;
-            const safeAiPositives = `"${(aiCheckResult?.positives?.join(', ') || '').replace(/"/g, '""')}"`;
-            const safeAiImprovements = `"${(aiCheckResult?.improvements?.join(', ') || '').replace(/"/g, '""')}"`;
-            const safeAiSummary = `"${(aiCheckResult?.overall_comment || '').replace(/"/g, '""')}"`;
-            const safeIngredients = `"${(selectedIngredients?.join(', ') || '').replace(/"/g, '""')}"`;
             
             return [
                 date, dishLetter, dishName, new Date(timestamp).toLocaleString(),
                 temperatures?.[0] || '', temperatures?.[1] || '', temperatures?.[2] || '',
                 weights?.[0] || '', weights?.[1] || '', weights?.[2] || '', totalWeight || '',
-                safeIngredients, safeComment, aiCheckResult?.score || '',
-                safeAiPositives, safeAiImprovements, safeAiSummary
-            ].join(',');
+                selectedIngredients?.join(', ') || '', comment || '', aiCheckResult?.score || '',
+                aiCheckResult?.positives?.join('; ') || '', aiCheckResult?.improvements?.join('; ') || '', aiCheckResult?.overall_comment || ''
+            ];
         });
 
-        const csvContent = [headers.join(','), ...rows].join('\n');
+        const dataForSheet = [headers, ...rows];
+        const ws = XLSX.utils.aoa_to_sheet(dataForSheet);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Details');
+        
         const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
-        downloadFile(csvContent, `CQC_Details_${weekId}.csv`, 'text/csv');
+        XLSX.writeFile(wb, `CQC_Details_${weekId}.xlsx`);
 
     } catch (error) {
         console.error("Failed to export details:", error);
@@ -709,42 +702,59 @@ async function handleExportSummary(button) {
     button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
 
     try {
-        const weekDates = getWeekDates(state.selectedDate);
-        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)).then(s => ({ date, data: s.val() || {} })));
-        const dailyResults = await Promise.all(weekDataPromises);
-        
-        const allDishes = state.menu.dishes.sort((a,b) => a.dishLetter.localeCompare(b.dishLetter));
-        if (allDishes.length === 0) {
-             alert("No menu dishes found for the selected week to export.");
+        if (!state.menu || !state.menu.dishes) {
+            alert("Menu data is not loaded. Cannot generate summary.");
             return;
         }
 
-        const headers = ["Date", "Dish Letter", "Dish Name", "Status", "AI Score", "Key Issues"];
-        const rows = [];
+        const weekDates = getWeekDates(state.selectedDate);
+        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)));
+        const weekSnapshots = await Promise.all(weekDataPromises);
 
-        dailyResults.forEach(({ date, data }) => {
-            allDishes.forEach(dish => {
-                const check = data[dish.dishLetter];
-                let status, score, issues;
-
-                if (check) {
-                    status = "Checked";
-                    score = check.aiCheckResult?.score || 'N/A';
-                    const improvementIssues = check.aiCheckResult?.improvements?.join('; ') || '';
-                    const commentIssues = check.comment || '';
-                    issues = [improvementIssues, commentIssues].filter(Boolean).join(' | ');
-                } else {
-                    status = "Not Checked";
-                    score = '';
-                    issues = '';
-                }
-                rows.push([date, dish.dishLetter, dish.dishName, status, score, `"${issues.replace(/"/g, '""')}"`].join(','));
-            });
+        const allChecks = [];
+        weekSnapshots.forEach(snapshot => {
+            const dailyData = snapshot.val();
+            if (dailyData) {
+                Object.values(dailyData).forEach(check => allChecks.push(check));
+            }
         });
 
-        const csvContent = [headers.join(','), ...rows].join('\n');
+        if (allChecks.length === 0) {
+            alert("No quality check data found for the selected week to export.");
+            return;
+        }
+
+        const headers = ["Date", "Dish Letter", "Dish Name", "Average Temperature (°C)", "Average Weight (g)", "Comment"];
+        
+        const dishMap = new Map(state.menu.dishes.map(d => [d.dishLetter, d.dishName]));
+
+        const rows = allChecks.map(check => {
+            const { date, dishLetter, temperatures, weights, comment } = check;
+            const dishName = dishMap.get(dishLetter) || 'Unknown';
+            
+            const validTemps = (temperatures || []).map(t => parseFloat(t)).filter(t => !isNaN(t) && t !== null);
+            const avgTemp = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length).toFixed(1) : 'N/A';
+
+            const validWeights = (weights || []).map(w => parseFloat(w)).filter(w => !isNaN(w) && w !== null);
+            const avgWeight = validWeights.length > 0 ? (validWeights.reduce((a, b) => a + b, 0) / validWeights.length).toFixed(1) : 'N/A';
+            
+            return [
+                date,
+                dishLetter,
+                dishName,
+                avgTemp,
+                avgWeight,
+                comment || ''
+            ];
+        });
+
+        const dataForSheet = [headers, ...rows];
+        const ws = XLSX.utils.aoa_to_sheet(dataForSheet);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Summary');
+
         const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
-        downloadFile(csvContent, `CQC_Summary_${weekId}.csv`, 'text/csv');
+        XLSX.writeFile(wb, `CQC_Summary_${weekId}.xlsx`);
 
     } catch (error) {
         console.error("Failed to export summary:", error);
