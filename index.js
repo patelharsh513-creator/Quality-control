@@ -1,8 +1,3 @@
-
-
-
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -945,10 +940,25 @@ function changeWeek(direction) {
 }
 
 // --- Initialization ---
+
+// Request camera permission once on load to improve UX
+async function requestCameraPermission() {
+    try {
+        // Attempt to get a media stream. This will trigger the permission prompt.
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Immediately stop the tracks to release the camera. We only wanted the permission.
+        stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+        // Log the error, but don't block the app. The user can still grant permission later.
+        console.warn('Camera permission was not granted on load:', err.name);
+    }
+}
+
 function initializeAppState() {
     fetchMenu();
     fetchCheckData();
 }
 
 setupEventListeners();
+requestCameraPermission(); // Request permission when the app starts
 initializeAppState();
