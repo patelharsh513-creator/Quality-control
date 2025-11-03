@@ -1,3 +1,9 @@
+
+
+
+
+
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -248,17 +254,17 @@ function renderDishCard() {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Temperature (°C)</p>
-                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="number" inputmode="decimal" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="text" inputmode="decimal" pattern="[0-9.-]*" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Weight (g)</p>
-                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" inputmode="decimal" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="text" inputmode="decimal" pattern="[0-9.-]*" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                     </div>
                      <div class="mt-4">
                         <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
                         <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
-                        <input type="number" inputmode="decimal" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
+                        <input type="text" inputmode="decimal" pattern="[0-9.-]*" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
                 </div>
                 <!-- Comment Section -->
