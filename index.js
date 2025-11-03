@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -56,6 +50,9 @@ const DOMElements = {
     apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
+    // Floating Nav
+    floatingNav: document.getElementById('floating-nav'),
+    floatingNextBtn: document.getElementById('floating-next-btn'),
 };
 
 // --- Utility Functions ---
@@ -327,22 +324,54 @@ function renderDishCard() {
 
     setFormDisabled(!isEditing);
 
-    // Add keyboard navigation for form inputs
+    // --- Floating Nav and Keyboard Navigation ---
     const focusableInputs = Array.from(
         form.querySelectorAll('input[name="temperatures"], input[name="weights"], input[name="totalWeight"], textarea[name="comment"]')
     );
 
+    let blurTimeout;
+    const hideFloatingNav = () => {
+        DOMElements.floatingNav.classList.add('translate-y-24', 'opacity-0');
+        setTimeout(() => DOMElements.floatingNav.classList.add('hidden'), 150);
+    };
+
+    const showFloatingNav = () => {
+        clearTimeout(blurTimeout);
+        DOMElements.floatingNav.classList.remove('hidden');
+        setTimeout(() => {
+            DOMElements.floatingNav.classList.remove('translate-y-24', 'opacity-0');
+        }, 10);
+    };
+
+    DOMElements.floatingNextBtn.onclick = () => {
+        const currentIndex = parseInt(DOMElements.floatingNextBtn.dataset.currentIndex || '-1', 10);
+        if (currentIndex > -1 && currentIndex + 1 < focusableInputs.length) {
+            focusableInputs[currentIndex + 1].focus();
+        } else if (currentIndex + 1 >= focusableInputs.length) {
+            if (!submitBtn.classList.contains('hidden')) {
+                submitBtn.focus();
+            }
+            hideFloatingNav();
+        }
+    };
+
     focusableInputs.forEach((input, index) => {
+        input.addEventListener('focus', () => {
+            DOMElements.floatingNextBtn.dataset.currentIndex = index;
+            showFloatingNav();
+        });
+        
+        input.addEventListener('blur', () => {
+            blurTimeout = setTimeout(hideFloatingNav, 200);
+        });
+
         input.addEventListener('keydown', (e) => {
-            // Check for 'Enter' key and not Shift+Enter (for textarea)
             if (e.key === 'Enter' && !e.shiftKey) { 
-                e.preventDefault(); // Prevent default action (e.g., form submission)
+                e.preventDefault();
                 const nextIndex = index + 1;
                 if (nextIndex < focusableInputs.length) {
-                    // If there is a next input, focus it
                     focusableInputs[nextIndex].focus();
                 } else {
-                    // If it's the last input, focus the submit button if it's visible
                     if (!submitBtn.classList.contains('hidden')) {
                         submitBtn.focus();
                     }
@@ -351,13 +380,13 @@ function renderDishCard() {
         });
     });
 
-    // If there's saved AI feedback, render it
     if (formData.aiCheckResult) {
         renderAiFeedback(formData.aiCheckResult);
         document.getElementById('ai-feedback-container').classList.remove('hidden');
         form.dataset.aiFeedback = JSON.stringify(formData.aiCheckResult);
     }
 }
+
 
 function renderCameraCapture(initialImage) {
     const container = document.getElementById('camera-container');
@@ -559,9 +588,9 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         ]);
 
         const ingredientsList = dish.dishIngredients.map(ing => `${ing.name} (${ing.weight})`).join(', ');
-        const promptText = `As a culinary quality control expert, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
+        const promptText = `As a culinary quality control expert in Berlin, Germany, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
         The expected ingredients are: ${ingredientsList}.
-        Based on your comparison, use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary.`;
+        Based on your comparison and knowledge of local Berlin food trends (e.g., preference for fresh, locally sourced ingredients, vibrant plating, and specific flavor profiles), use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary. Ground your suggestions in real-time search results about Berlin's culinary scene where relevant.`;
         
         const requestBody = {
             contents: [{
@@ -574,6 +603,8 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
                 ]
             }],
             tools: [{
+                googleSearch: {},
+            },{
                 functionDeclarations: [{
                     name: "quality_check_tool",
                     description: "Extracts the quality check information from the analysis.",
@@ -607,14 +638,18 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         }
 
         const responseData = await response.json();
-        const functionCall = responseData.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-        
+        const candidate = responseData.candidates?.[0];
+        const functionCall = candidate?.content?.parts?.find(p => p.functionCall)?.functionCall;
+        const groundingMetadata = candidate?.groundingMetadata;
+
         if (!functionCall || !functionCall.args) {
             console.error("Invalid API response structure:", responseData);
             throw new Error("AI did not return the expected analysis structure.");
         }
 
         const feedbackData = functionCall.args;
+        feedbackData.groundingMetadata = groundingMetadata; // Attach grounding data
+        
         if (form) {
             form.dataset.aiFeedback = JSON.stringify(feedbackData);
         }
@@ -629,11 +664,12 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     }
 }
 
+
 function renderAiFeedback(feedbackData) {
     const container = document.getElementById('ai-feedback-container');
     if (!container || !feedbackData) return;
 
-    const { score, positives, improvements, overall_comment } = feedbackData;
+    const { score, positives, improvements, overall_comment, groundingMetadata } = feedbackData;
 
     // Determine color and width for the progress bar
     const scorePercentage = (score / 10) * 100;
@@ -646,10 +682,23 @@ function renderAiFeedback(feedbackData) {
 
     const listItems = (items, icon) => (items || []).map(item => `<li class="flex items-start"><span class="mr-2 pt-0.5">${icon}</span><span>${item}</span></li>`).join('');
 
+    let sourcesHTML = '';
+    const sources = groundingMetadata?.groundingChunks?.filter(c => c.web).map(c => c.web);
+    if (sources && sources.length > 0) {
+        sourcesHTML = `
+            <div class="mt-4 pt-4 border-t border-gray-700">
+                <h5 class="text-xs font-semibold text-gray-400 mb-2">AI consulted the following sources for local context:</h5>
+                <ul class="space-y-1 text-xs list-none pl-0">
+                    ${sources.map(source => `<li><a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline truncate block">${source.title || source.uri}</a></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
     container.innerHTML = `
         <div>
-            <h4 class="font-semibold text-gray-200 mb-2">AI Analysis</h4>
-            <div class="p-4 border border-gray-700 rounded-md bg-gray-900/50 space-y-4">
+            <h4 class="font-semibold text-gray-200 mb-2">AI Analysis (Berlin Context)</h4>
+            <div class="p-4 border border-gray-700 rounded-md bg-gray-900/50">
                 <div>
                     <div class="flex justify-between items-baseline mb-1">
                         <p class="font-bold text-lg text-gray-200">Overall Score</p>
@@ -660,17 +709,19 @@ function renderAiFeedback(feedbackData) {
                     </div>
                 </div>
 
-                <p class="text-sm italic text-gray-400">"${overall_comment}"</p>
+                <p class="text-sm italic text-gray-400 mt-4">"${overall_comment}"</p>
                 
-                <div>
-                    <h5 class="font-semibold mb-1 text-green-400">What's Good:</h5>
-                    <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(positives, '✅')}</ul>
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h5 class="font-semibold mb-1 text-green-400">What's Good:</h5>
+                        <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(positives, '✅')}</ul>
+                    </div>
+                    <div>
+                        <h5 class="font-semibold mb-1 text-yellow-400">Actionable Improvements:</h5>
+                        <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(improvements, '⚠️')}</ul>
+                    </div>
                 </div>
-                
-                <div>
-                    <h5 class="font-semibold mb-1 text-yellow-400">Actionable Improvements:</h5>
-                    <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(improvements, '⚠️')}</ul>
-                </div>
+                 ${sourcesHTML}
             </div>
         </div>
     `;
