@@ -336,13 +336,11 @@ function renderDishCard() {
 
     const showAccessoryBar = () => {
         clearTimeout(blurTimeout);
-        DOMElements.inputAccessoryBar.classList.remove('hidden');
-        setTimeout(() => DOMElements.inputAccessoryBar.classList.remove('translate-y-full'), 10);
+        DOMElements.inputAccessoryBar.classList.add('is-visible');
     };
 
     const hideAccessoryBar = () => {
-        DOMElements.inputAccessoryBar.classList.add('translate-y-full');
-        setTimeout(() => DOMElements.inputAccessoryBar.classList.add('hidden'), 300); // Match transition duration
+        DOMElements.inputAccessoryBar.classList.remove('is-visible');
     };
 
     const updateAccessoryBarButtons = () => {
@@ -357,23 +355,28 @@ function renderDishCard() {
         }
     };
 
-    // --- IMPORTANT: Clear old listeners before attaching new ones ---
-    DOMElements.inputPrevBtn.onclick = null;
-    DOMElements.inputNextBtn.onclick = null;
-    DOMElements.inputDoneBtn.onclick = null;
-    
+    // Clear old listeners before attaching new ones
+    const prevBtnClone = DOMElements.inputPrevBtn.cloneNode(true);
+    DOMElements.inputPrevBtn.parentNode.replaceChild(prevBtnClone, DOMElements.inputPrevBtn);
+    DOMElements.inputPrevBtn = prevBtnClone;
+
+    const nextBtnClone = DOMElements.inputNextBtn.cloneNode(true);
+    DOMElements.inputNextBtn.parentNode.replaceChild(nextBtnClone, DOMElements.inputNextBtn);
+    DOMElements.inputNextBtn = nextBtnClone;
+
+    const doneBtnClone = DOMElements.inputDoneBtn.cloneNode(true);
+    DOMElements.inputDoneBtn.parentNode.replaceChild(doneBtnClone, DOMElements.inputDoneBtn);
+    DOMElements.inputDoneBtn = doneBtnClone;
+
     DOMElements.inputPrevBtn.onclick = () => navigateTo(-1);
     DOMElements.inputNextBtn.onclick = () => navigateTo(1);
     DOMElements.inputDoneBtn.onclick = () => {
         if (currentFocusIndex !== -1 && focusableInputs[currentFocusIndex]) {
             focusableInputs[currentFocusIndex].blur();
         }
-        hideAccessoryBar();
     };
 
     focusableInputs.forEach((input, index) => {
-        // --- IMPORTANT: To avoid memory leaks, we need a way to remove old listeners.
-        // A simple way is to replace the element, but here we'll manage it carefully.
         const handleFocus = () => {
             currentFocusIndex = index;
             updateAccessoryBarButtons();
@@ -381,29 +384,26 @@ function renderDishCard() {
         };
 
         const handleBlur = () => {
-            // Use a timeout to allow clicks on the accessory bar before it hides
             blurTimeout = setTimeout(() => {
-                // Check if focus has moved to another focusable input or a bar button
-                if (document.activeElement !== DOMElements.inputPrevBtn &&
-                    document.activeElement !== DOMElements.inputNextBtn &&
-                    document.activeElement !== DOMElements.inputDoneBtn &&
-                    !focusableInputs.includes(document.activeElement)) {
+                const activeEl = document.activeElement;
+                if (activeEl !== DOMElements.inputPrevBtn &&
+                    activeEl !== DOMElements.inputNextBtn &&
+                    activeEl !== DOMElements.inputDoneBtn &&
+                    !focusableInputs.includes(activeEl)) {
                     currentFocusIndex = -1;
                     hideAccessoryBar();
                 }
-            }, 200);
+            }, 150);
         };
         
         const handleKeyDown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { 
                 e.preventDefault();
-                // Still useful for desktop/hardware keyboards
-                if (index + 1 < focusableInputs.length) {
-                    focusableInputs[index + 1].focus();
-                } else {
-                    if (!submitBtn.classList.contains('hidden')) {
-                        submitBtn.focus();
-                    }
+                navigateTo(1); // Go to next input
+                if (index === focusableInputs.length - 1) { // If last input, submit
+                  if (!submitBtn.classList.contains('hidden')) {
+                      submitBtn.focus();
+                  }
                 }
             }
         };
