@@ -1,5 +1,3 @@
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -250,17 +248,17 @@ function renderDishCard() {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Temperature (°C)</p>
-                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="number" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="number" inputmode="numeric" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Weight (g)</p>
-                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" inputmode="numeric" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                     </div>
                      <div class="mt-4">
                         <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
                         <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
-                        <input type="number" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
+                        <input type="number" inputmode="numeric" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
                 </div>
                 <!-- Comment Section -->
@@ -554,7 +552,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
                         properties: {
                             score: { type: "NUMBER", description: "A quality score from 0 to 10." },
                             positives: { type: "ARRAY", items: { type: "STRING" }, description: "A list of positive aspects of the dish presentation." },
-                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of aspects that could be improved." },
+                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of actionable suggestions for how to improve the dish's presentation or quality. For example, instead of 'Garnish is messy', suggest 'Arrange the microgreens more carefully in the center'." },
                             overall_comment: { type: "STRING", description: "A brief overall summary of the quality check." }
                         },
                         required: ["score", "positives", "improvements", "overall_comment"]
@@ -606,24 +604,41 @@ function renderAiFeedback(feedbackData) {
     if (!container || !feedbackData) return;
 
     const { score, positives, improvements, overall_comment } = feedbackData;
-    const scoreColor = score >= 8 ? 'text-green-400' : score >= 5 ? 'text-yellow-400' : 'text-red-400';
+
+    // Determine color and width for the progress bar
+    const scorePercentage = (score / 10) * 100;
+    let scoreBarColorClass = 'bg-green-500';
+    if (score < 5) {
+        scoreBarColorClass = 'bg-red-600';
+    } else if (score < 8) {
+        scoreBarColorClass = 'bg-yellow-500';
+    }
+
     const listItems = (items, icon) => (items || []).map(item => `<li class="flex items-start"><span class="mr-2 pt-0.5">${icon}</span><span>${item}</span></li>`).join('');
 
     container.innerHTML = `
         <div>
             <h4 class="font-semibold text-gray-200 mb-2">AI Analysis</h4>
-            <div class="p-4 border border-gray-700 rounded-md bg-gray-800 space-y-4">
-                <div class="flex items-baseline">
-                    <p class="font-bold text-lg text-gray-200">Overall Score:</p>
-                    <p class="ml-2 text-2xl font-black ${scoreColor}">${score}/10</p>
+            <div class="p-4 border border-gray-700 rounded-md bg-gray-900/50 space-y-4">
+                <div>
+                    <div class="flex justify-between items-baseline mb-1">
+                        <p class="font-bold text-lg text-gray-200">Overall Score</p>
+                        <p class="text-2xl font-black text-white">${score}<span class="text-base font-medium text-gray-400">/10</span></p>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                        <div class="${scoreBarColorClass} h-2.5 rounded-full" style="width: ${scorePercentage}%"></div>
+                    </div>
                 </div>
+
                 <p class="text-sm italic text-gray-400">"${overall_comment}"</p>
+                
                 <div>
                     <h5 class="font-semibold mb-1 text-green-400">What's Good:</h5>
                     <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(positives, '✅')}</ul>
                 </div>
+                
                 <div>
-                    <h5 class="font-semibold mb-1 text-yellow-400">Areas for Improvement:</h5>
+                    <h5 class="font-semibold mb-1 text-yellow-400">Actionable Improvements:</h5>
                     <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(improvements, '⚠️')}</ul>
                 </div>
             </div>
