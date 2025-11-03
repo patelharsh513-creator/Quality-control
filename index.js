@@ -1,3 +1,8 @@
+
+
+
+
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -248,17 +253,17 @@ function renderDishCard() {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Temperature (°C)</p>
-                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="number" inputmode="numeric" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="number" inputmode="decimal" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Weight (g)</p>
-                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" inputmode="numeric" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="number" inputmode="decimal" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                     </div>
                      <div class="mt-4">
                         <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
                         <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
-                        <input type="number" inputmode="numeric" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
+                        <input type="number" inputmode="decimal" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
                 </div>
                 <!-- Comment Section -->
@@ -320,6 +325,30 @@ function renderDishCard() {
     };
 
     setFormDisabled(!isEditing);
+
+    // Add keyboard navigation for form inputs
+    const focusableInputs = Array.from(
+        form.querySelectorAll('input[name="temperatures"], input[name="weights"], input[name="totalWeight"], textarea[name="comment"]')
+    );
+
+    focusableInputs.forEach((input, index) => {
+        input.addEventListener('keydown', (e) => {
+            // Check for 'Enter' key and not Shift+Enter (for textarea)
+            if (e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault(); // Prevent default action (e.g., form submission)
+                const nextIndex = index + 1;
+                if (nextIndex < focusableInputs.length) {
+                    // If there is a next input, focus it
+                    focusableInputs[nextIndex].focus();
+                } else {
+                    // If it's the last input, focus the submit button if it's visible
+                    if (!submitBtn.classList.contains('hidden')) {
+                        submitBtn.focus();
+                    }
+                }
+            }
+        });
+    });
 
     // If there's saved AI feedback, render it
     if (formData.aiCheckResult) {
