@@ -111,13 +111,13 @@
         </div>
     </div>
 
-    <!-- Floating Navigation for Forms -->
-    <div id="floating-nav" class="fixed bottom-4 right-4 z-50 transition-transform transform translate-y-24 opacity-0 hidden">
-        <button id="floating-next-btn" class="flex items-center justify-center w-16 h-16 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500" aria-label="Next field">
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-             </svg>
-        </button>
+    <!-- Input Accessory Bar for mobile form navigation -->
+    <div id="input-accessory-bar" class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-2 flex justify-between items-center z-50 transition-transform transform translate-y-full hidden" style="transition: transform 0.3s ease-in-out;">
+        <div>
+            <button id="input-prev-btn" class="px-4 py-2 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50" aria-label="Previous field">Prev</button>
+            <button id="input-next-btn" class="px-4 py-2 ml-2 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50" aria-label="Next field">Next</button>
+        </div>
+        <button id="input-done-btn" class="px-4 py-2 text-sm font-medium rounded-md text-indigo-400 hover:bg-gray-700" aria-label="Done">Done</button>
     </div>
 
     <script src="index.js" type="module"></script>
