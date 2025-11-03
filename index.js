@@ -50,9 +50,11 @@ const DOMElements = {
     apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
-    // Floating Nav
-    floatingNav: document.getElementById('floating-nav'),
-    floatingNextBtn: document.getElementById('floating-next-btn'),
+    // Input Accessory Bar
+    inputAccessoryBar: document.getElementById('input-accessory-bar'),
+    inputPrevBtn: document.getElementById('input-prev-btn'),
+    inputNextBtn: document.getElementById('input-next-btn'),
+    inputDoneBtn: document.getElementById('input-done-btn'),
 };
 
 // --- Utility Functions ---
@@ -324,60 +326,91 @@ function renderDishCard() {
 
     setFormDisabled(!isEditing);
 
-    // --- Floating Nav and Keyboard Navigation ---
+    // --- Input Accessory Bar and Keyboard Navigation ---
     const focusableInputs = Array.from(
         form.querySelectorAll('input[name="temperatures"], input[name="weights"], input[name="totalWeight"], textarea[name="comment"]')
     );
 
+    let currentFocusIndex = -1;
     let blurTimeout;
-    const hideFloatingNav = () => {
-        DOMElements.floatingNav.classList.add('translate-y-24', 'opacity-0');
-        setTimeout(() => DOMElements.floatingNav.classList.add('hidden'), 150);
-    };
 
-    const showFloatingNav = () => {
+    const showAccessoryBar = () => {
         clearTimeout(blurTimeout);
-        DOMElements.floatingNav.classList.remove('hidden');
-        setTimeout(() => {
-            DOMElements.floatingNav.classList.remove('translate-y-24', 'opacity-0');
-        }, 10);
+        DOMElements.inputAccessoryBar.classList.remove('hidden');
+        setTimeout(() => DOMElements.inputAccessoryBar.classList.remove('translate-y-full'), 10);
     };
 
-    DOMElements.floatingNextBtn.onclick = () => {
-        const currentIndex = parseInt(DOMElements.floatingNextBtn.dataset.currentIndex || '-1', 10);
-        if (currentIndex > -1 && currentIndex + 1 < focusableInputs.length) {
-            focusableInputs[currentIndex + 1].focus();
-        } else if (currentIndex + 1 >= focusableInputs.length) {
-            if (!submitBtn.classList.contains('hidden')) {
-                submitBtn.focus();
-            }
-            hideFloatingNav();
+    const hideAccessoryBar = () => {
+        DOMElements.inputAccessoryBar.classList.add('translate-y-full');
+        setTimeout(() => DOMElements.inputAccessoryBar.classList.add('hidden'), 300); // Match transition duration
+    };
+
+    const updateAccessoryBarButtons = () => {
+        DOMElements.inputPrevBtn.disabled = currentFocusIndex <= 0;
+        DOMElements.inputNextBtn.disabled = currentFocusIndex >= focusableInputs.length - 1;
+    };
+
+    const navigateTo = (direction) => {
+        const newIndex = currentFocusIndex + direction;
+        if (newIndex >= 0 && newIndex < focusableInputs.length) {
+            focusableInputs[newIndex].focus();
         }
     };
 
-    focusableInputs.forEach((input, index) => {
-        input.addEventListener('focus', () => {
-            DOMElements.floatingNextBtn.dataset.currentIndex = index;
-            showFloatingNav();
-        });
-        
-        input.addEventListener('blur', () => {
-            blurTimeout = setTimeout(hideFloatingNav, 200);
-        });
+    // --- IMPORTANT: Clear old listeners before attaching new ones ---
+    DOMElements.inputPrevBtn.onclick = null;
+    DOMElements.inputNextBtn.onclick = null;
+    DOMElements.inputDoneBtn.onclick = null;
+    
+    DOMElements.inputPrevBtn.onclick = () => navigateTo(-1);
+    DOMElements.inputNextBtn.onclick = () => navigateTo(1);
+    DOMElements.inputDoneBtn.onclick = () => {
+        if (currentFocusIndex !== -1 && focusableInputs[currentFocusIndex]) {
+            focusableInputs[currentFocusIndex].blur();
+        }
+        hideAccessoryBar();
+    };
 
-        input.addEventListener('keydown', (e) => {
+    focusableInputs.forEach((input, index) => {
+        // --- IMPORTANT: To avoid memory leaks, we need a way to remove old listeners.
+        // A simple way is to replace the element, but here we'll manage it carefully.
+        const handleFocus = () => {
+            currentFocusIndex = index;
+            updateAccessoryBarButtons();
+            showAccessoryBar();
+        };
+
+        const handleBlur = () => {
+            // Use a timeout to allow clicks on the accessory bar before it hides
+            blurTimeout = setTimeout(() => {
+                // Check if focus has moved to another focusable input or a bar button
+                if (document.activeElement !== DOMElements.inputPrevBtn &&
+                    document.activeElement !== DOMElements.inputNextBtn &&
+                    document.activeElement !== DOMElements.inputDoneBtn &&
+                    !focusableInputs.includes(document.activeElement)) {
+                    currentFocusIndex = -1;
+                    hideAccessoryBar();
+                }
+            }, 200);
+        };
+        
+        const handleKeyDown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { 
                 e.preventDefault();
-                const nextIndex = index + 1;
-                if (nextIndex < focusableInputs.length) {
-                    focusableInputs[nextIndex].focus();
+                // Still useful for desktop/hardware keyboards
+                if (index + 1 < focusableInputs.length) {
+                    focusableInputs[index + 1].focus();
                 } else {
                     if (!submitBtn.classList.contains('hidden')) {
                         submitBtn.focus();
                     }
                 }
             }
-        });
+        };
+
+        input.addEventListener('focus', handleFocus);
+        input.addEventListener('blur', handleBlur);
+        input.addEventListener('keydown', handleKeyDown);
     });
 
     if (formData.aiCheckResult) {
