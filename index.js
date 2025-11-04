@@ -1,5 +1,3 @@
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { GoogleGenAI } from "https://esm.run/@google/genai";
@@ -528,14 +526,8 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     
     const form = document.getElementById('dish-form');
 
-
     try {
-        const apiKey = localStorage.getItem('geminiApiKey');
-        if (!apiKey) {
-            throw new Error('Please set your Gemini API key in Settings.');
-        }
-
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -546,11 +538,12 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         ]);
 
         const ingredientsList = dish.dishIngredients.map(ing => `${ing.name} (${ing.weight})`).join(', ');
-        const promptText = `As a culinary quality control expert in Berlin, Germany, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
+        const promptText = `As a culinary quality control expert, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
         The expected ingredients are: ${ingredientsList}.
-        Based on your comparison and knowledge of local Berlin food trends (e.g., preference for fresh, locally sourced ingredients, vibrant plating, and specific flavor profiles), conduct a grounded search and then provide your analysis.
+        Based purely on a visual comparison, provide your analysis.
         Your entire response MUST be a single, valid JSON object with the following structure: { "score": number, "positives": string[], "improvements": string[], "overall_comment": string }.
-        Do not include any text, markdown formatting, or code fences (like \`\`\`json) before or after the JSON object. The "improvements" should be actionable suggestions.`;
+        The "score" MUST be an integer between 1 and 10.
+        Do not include any text, markdown formatting, or code fences (like \`\`\`json) before or after the JSON object. The "improvements" should be actionable suggestions for the chef to match the reference image better.`;
         
         const refImagePart = { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } };
         const capturedImagePart = { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } };
@@ -566,9 +559,6 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
                     { text: promptText }
                 ]
             },
-            config: {
-                tools: [{ googleSearch: {} }],
-            }
         });
 
         // --- Robust Response Handling ---
@@ -584,7 +574,6 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         }
 
         const textResponse = response.text;
-        const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
         
         let feedbackData;
         try {
@@ -595,8 +584,6 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             console.error("Failed to parse JSON from AI response:", textResponse);
             throw new Error("AI returned an invalid JSON format.");
         }
-
-        feedbackData.groundingMetadata = groundingMetadata; // Attach grounding data
         
         if (form) {
             form.dataset.aiFeedback = JSON.stringify(feedbackData);
@@ -606,10 +593,6 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     } catch (error) {
         console.error("AI Check failed:", error);
         feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> AI analysis failed.</p><p class="text-xs mt-1">${error.message}</p></div>`;
-        if (error.message.includes('API key')) {
-             DOMElements.settingsError.textContent = 'Please set your Gemini API key to use the AI Check feature.';
-             DOMElements.settingsModal.classList.remove('hidden');
-        }
     } finally {
         buttonElement.disabled = false;
         buttonElement.innerHTML = originalContent;
@@ -621,7 +604,9 @@ function renderAiFeedback(feedbackData) {
     const container = document.getElementById('ai-feedback-container');
     if (!container || !feedbackData) return;
 
-    const { score, positives, improvements, overall_comment, groundingMetadata } = feedbackData;
+    // Clamp the score to be between 1 and 10, just in case.
+    const score = Math.max(1, Math.min(10, feedbackData.score || 0));
+    const { positives, improvements, overall_comment } = feedbackData;
 
     // Determine color and width for the progress bar
     const scorePercentage = (score / 10) * 100;
@@ -634,22 +619,9 @@ function renderAiFeedback(feedbackData) {
 
     const listItems = (items, icon) => (items || []).map(item => `<li class="flex items-start"><span class="mr-2 pt-0.5">${icon}</span><span>${item}</span></li>`).join('');
 
-    let sourcesHTML = '';
-    const sources = groundingMetadata?.groundingChunks?.filter(c => c.web).map(c => c.web);
-    if (sources && sources.length > 0) {
-        sourcesHTML = `
-            <div class="mt-4 pt-4 border-t border-gray-700">
-                <h5 class="text-xs font-semibold text-gray-400 mb-2">AI consulted the following sources for local context:</h5>
-                <ul class="space-y-1 text-xs list-none pl-0">
-                    ${sources.map(source => `<li><a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline truncate block">${source.title || source.uri}</a></li>`).join('')}
-                </ul>
-            </div>
-        `;
-    }
-
     container.innerHTML = `
         <div>
-            <h4 class="font-semibold text-gray-200 mb-2">AI Analysis (Berlin Context)</h4>
+            <h4 class="font-semibold text-gray-200 mb-2">AI Analysis</h4>
             <div class="p-4 border border-gray-700 rounded-md bg-gray-900/50">
                 <div>
                     <div class="flex justify-between items-baseline mb-1">
@@ -673,7 +645,6 @@ function renderAiFeedback(feedbackData) {
                         <ul class="space-y-1 text-sm list-none pl-0 text-gray-300">${listItems(improvements, '⚠️')}</ul>
                     </div>
                 </div>
-                 ${sourcesHTML}
             </div>
         </div>
     `;
@@ -818,7 +789,6 @@ async function handleExportSummary(button) {
 function setupEventListeners() {
     // Header
     DOMElements.settingsBtn.onclick = () => {
-        DOMElements.apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
         DOMElements.settingsModal.classList.remove('hidden');
     };
     DOMElements.exportDetailsBtn.onclick = (e) => handleExportDetails(e.currentTarget);
@@ -907,14 +877,6 @@ function setupAccessoryBarAndKeyboardListeners() {
 }
 
 function handleSaveSettings() {
-    // Save API Key
-    const apiKey = DOMElements.apiKeyInput.value.trim();
-    if (apiKey) {
-        localStorage.setItem('geminiApiKey', apiKey);
-    } else {
-        localStorage.removeItem('geminiApiKey');
-    }
-
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
     
@@ -1039,5 +1001,5 @@ function initializeAppState() {
 
 setupEventListeners();
 setupAccessoryBarAndKeyboardListeners(); // Setup robust listeners once
-requestCameraPermission(); // Request permission when the app starts
-initializeAppState();
+requestCameraPermission(); // Request permission
+initializeAppState(); // Initial load
