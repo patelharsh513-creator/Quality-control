@@ -1,3 +1,4 @@
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
@@ -388,11 +389,28 @@ function renderCameraCapture(initialImage) {
     };
 
     captureBtn.onclick = () => {
+        const MAX_DIMENSION = 512;
         const canvas = document.createElement('canvas');
-        canvas.width = videoEl.videoWidth;
-        canvas.height = videoEl.videoHeight;
-        canvas.getContext('2d').drawImage(videoEl, 0, 0);
-        const dataUrl = canvas.toDataURL('image/jpeg');
+        const videoWidth = videoEl.videoWidth;
+        const videoHeight = videoEl.videoHeight;
+
+        let newWidth, newHeight;
+
+        if (videoWidth > videoHeight) {
+            newWidth = MAX_DIMENSION;
+            newHeight = (videoHeight / videoWidth) * MAX_DIMENSION;
+        } else {
+            newHeight = MAX_DIMENSION;
+            newWidth = (videoWidth / videoHeight) * MAX_DIMENSION;
+        }
+
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoEl, 0, 0, newWidth, newHeight);
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9); // Use 90% quality
         previewImg.src = dataUrl;
         form.dataset.capturedImage = dataUrl;
         stopCamera();
@@ -450,7 +468,7 @@ function showMainView() {
 }
 
 function showDishDetailView() {
-    DOMElements.mainView.classList.add('hidden');
+    DOMElements.mainView.add('hidden');
     DOMElements.dishDetailView.classList.remove('hidden');
     renderDishCard();
 }
@@ -523,7 +541,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             return;
         }
         
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
@@ -568,18 +586,34 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         }
 
         const responseData = await response.json();
-        const candidate = responseData.candidates?.[0];
-        const textResponse = candidate?.content?.parts?.[0]?.text;
-        const groundingMetadata = candidate?.groundingMetadata;
-
-        if (!textResponse) {
-             console.error("Invalid API response structure, no text part:", responseData);
-            throw new Error("AI did not return a text response.");
+        
+        // --- Robust Response Handling ---
+        if (!responseData.candidates || responseData.candidates.length === 0) {
+            if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
+                throw new Error(`Request was blocked by API. Reason: ${responseData.promptFeedback.blockReason}.`);
+            }
+            throw new Error("API returned no candidates. The request may have been blocked.");
         }
+
+        const candidate = responseData.candidates[0];
+
+        if (candidate.finishReason !== 'STOP') {
+             throw new Error(`AI response was stopped. Reason: ${candidate.finishReason}. This often indicates the content was blocked for safety reasons.`);
+        }
+        
+        if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0 || !candidate.content.parts[0].text) {
+            console.error("Invalid API response structure, no text part:", responseData);
+            throw new Error("AI did not return a valid text response.");
+        }
+
+        const textResponse = candidate.content.parts[0].text;
+        const groundingMetadata = candidate.groundingMetadata;
         
         let feedbackData;
         try {
-            feedbackData = JSON.parse(textResponse);
+            // Clean the response to ensure it's valid JSON
+            const jsonString = textResponse.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            feedbackData = JSON.parse(jsonString);
         } catch (e) {
             console.error("Failed to parse JSON from AI response:", textResponse);
             throw new Error("AI returned an invalid JSON format.");
