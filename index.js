@@ -51,6 +51,7 @@ const DOMElements = {
     settingsSaveBtn: document.getElementById('settings-save-btn'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
+    apiKeyInput: document.getElementById('api-key-input'),
     // Input Accessory Bar
     inputAccessoryBar: document.getElementById('input-accessory-bar'),
     inputPrevBtn: document.getElementById('input-prev-btn'),
@@ -507,11 +508,13 @@ async function handleAiCheck(dish, capturedImageDataUrl) {
     try {
         const apiKey = localStorage.getItem('geminiApiKey');
         if (!apiKey) {
-            throw new Error('Please set your Gemini API key in Settings.');
+            feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-yellow-900/30 text-yellow-300"><p><strong>Action Required:</strong> Please set your Gemini API key in Settings.</p></div>`;
+            DOMElements.settingsModal.classList.remove('hidden');
+            DOMElements.apiKeyInput.focus();
+            return;
         }
-        const ai = new GoogleGenAI(apiKey);
+        const ai = new GoogleGenAI({ apiKey });
         
-        // The reference image is now a local blob URL, so we fetch it locally
         const refImageResponse = await fetch(dish.dishImage);
         const refImageBlob = await refImageResponse.blob();
         
@@ -537,28 +540,28 @@ async function handleAiCheck(dish, capturedImageDataUrl) {
         
         const refImagePart = { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } };
         const capturedImagePart = { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } };
+        const textPart = { text: promptText };
 
-        const model = ai.getGenerativeModel({ model: 'gemini-pro-vision' });
-        const result = await model.generateContent([promptText, refImagePart, capturedImagePart]);
-        const response = await result.response;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [textPart, refImagePart, capturedImagePart] }
+        });
         
-        // --- Robust Response Handling ---
-        if (!response.text) {
+        const textResponse = response.text;
+        
+        if (!textResponse) {
              if (response.candidates && response.candidates.length > 0) {
                  const candidate = response.candidates[0];
-                 if(candidate.finishReason !== 'STOP'){
+                 if(candidate.finishReason && candidate.finishReason !== 'STOP'){
                      throw new Error(`Request was blocked by API. Reason: ${candidate.finishReason}.`);
                  }
              }
              console.error("Invalid API response structure, no text part:", response);
              throw new Error("AI did not return a text response.");
         }
-
-        const textResponse = response.text();
         
         let feedbackData;
         try {
-            // Clean the response to ensure it's valid JSON
             const jsonString = textResponse.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
             feedbackData = JSON.parse(jsonString);
         } catch (e) {
@@ -573,7 +576,11 @@ async function handleAiCheck(dish, capturedImageDataUrl) {
 
     } catch (error) {
         console.error("AI Check failed:", error);
-        feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> AI analysis failed.</p><p class="text-xs mt-1">${error.message}</p></div>`;
+        let errorMessage = error.message;
+        if (errorMessage.includes('API key not valid')) {
+            errorMessage = 'Your API Key is not valid. Please check it in Settings.';
+        }
+        feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> AI analysis failed.</p><p class="text-xs mt-1">${errorMessage}</p></div>`;
     }
 }
 
@@ -768,9 +775,8 @@ function setupEventListeners() {
     DOMElements.settingsBtn.onclick = () => {
         const apiKey = localStorage.getItem('geminiApiKey') || '';
         // Find the API key input in the modal if it exists
-        const apiKeyInput = document.getElementById('api-key-input');
-        if (apiKeyInput) {
-            apiKeyInput.value = apiKey;
+        if (DOMElements.apiKeyInput) {
+            DOMElements.apiKeyInput.value = apiKey;
         }
         DOMElements.settingsModal.classList.remove('hidden');
     };
@@ -833,9 +839,10 @@ function setupAccessoryBarAndKeyboardListeners() {
 
     appContainer.addEventListener('focusout', (e) => {
          if (e.target.matches('[data-form-input]')) {
+            // A small delay helps handle focus shifts between the input and the accessory bar buttons
             setTimeout(() => {
                 const activeEl = document.activeElement;
-                if (!activeEl.matches('#input-accessory-bar button')) {
+                if (!activeEl || !activeEl.closest('#input-accessory-bar')) {
                     hideAccessoryBar();
                 }
             }, 150);
@@ -862,9 +869,8 @@ function setupAccessoryBarAndKeyboardListeners() {
 function handleSaveSettings() {
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
-    const apiKeyInput = document.getElementById('api-key-input');
+    const apiKeyInput = DOMElements.apiKeyInput;
     
-    // Save API Key if the input exists
     if (apiKeyInput) {
         localStorage.setItem('geminiApiKey', apiKeyInput.value);
     }
