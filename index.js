@@ -1,6 +1,8 @@
 
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { GoogleGenAI } from "https://esm.run/@google/genai";
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -468,7 +470,7 @@ function showMainView() {
 }
 
 function showDishDetailView() {
-    DOMElements.mainView.add('hidden');
+    DOMElements.mainView.classList.add('hidden');
     DOMElements.dishDetailView.classList.remove('hidden');
     renderDishCard();
 }
@@ -530,19 +532,11 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     try {
         const apiKey = localStorage.getItem('geminiApiKey');
         if (!apiKey) {
-            DOMElements.settingsError.textContent = 'Please set your Gemini API key to use the AI Check feature.';
-            DOMElements.settingsModal.classList.remove('hidden');
-            
-            // Reset UI
-            buttonElement.disabled = false;
-            buttonElement.innerHTML = originalContent;
-            feedbackContainer.classList.add('hidden');
-            feedbackContainer.innerHTML = '';
-            return;
+            throw new Error('Please set your Gemini API key in Settings.');
         }
-        
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
+        const ai = new GoogleGenAI({ apiKey });
+        
         const [refImageBase64, capturedImageBase64] = await Promise.all([
             urlToBase64(dish.dishImage).catch(e => {
                 console.error("Reference image fetch error:", e);
@@ -558,56 +552,39 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         Your entire response MUST be a single, valid JSON object with the following structure: { "score": number, "positives": string[], "improvements": string[], "overall_comment": string }.
         Do not include any text, markdown formatting, or code fences (like \`\`\`json) before or after the JSON object. The "improvements" should be actionable suggestions.`;
         
-        const requestBody = {
-            contents: [{
+        const refImagePart = { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } };
+        const capturedImagePart = { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } };
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
                 parts: [
                     { text: "Reference Image:" },
-                    { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } },
+                    refImagePart,
                     { text: "Captured Image:" },
-                    { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } },
+                    capturedImagePart,
                     { text: promptText }
                 ]
-            }],
-            tools: [{
-                googleSearch: {},
-            }]
-        };
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+            },
+            config: {
+                tools: [{ googleSearch: {} }],
+            }
         });
 
-        if (!response.ok) {
-            const errorBody = await response.json();
-            console.error("API Error:", errorBody);
-            throw new Error(`API returned status ${response.status}: ${errorBody.error?.message || 'Unknown error'}`);
-        }
-
-        const responseData = await response.json();
-        
         // --- Robust Response Handling ---
-        if (!responseData.candidates || responseData.candidates.length === 0) {
-            if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
-                throw new Error(`Request was blocked by API. Reason: ${responseData.promptFeedback.blockReason}.`);
-            }
-            throw new Error("API returned no candidates. The request may have been blocked.");
+        if (!response.text) {
+             if (response.candidates && response.candidates.length > 0) {
+                 const candidate = response.candidates[0];
+                 if(candidate.finishReason !== 'STOP'){
+                     throw new Error(`Request was blocked by API. Reason: ${candidate.finishReason}.`);
+                 }
+             }
+             console.error("Invalid API response structure, no text part:", response);
+             throw new Error("AI did not return a text response.");
         }
 
-        const candidate = responseData.candidates[0];
-
-        if (candidate.finishReason !== 'STOP') {
-             throw new Error(`AI response was stopped. Reason: ${candidate.finishReason}. This often indicates the content was blocked for safety reasons.`);
-        }
-        
-        if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0 || !candidate.content.parts[0].text) {
-            console.error("Invalid API response structure, no text part:", responseData);
-            throw new Error("AI did not return a valid text response.");
-        }
-
-        const textResponse = candidate.content.parts[0].text;
-        const groundingMetadata = candidate.groundingMetadata;
+        const textResponse = response.text;
+        const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
         
         let feedbackData;
         try {
@@ -629,6 +606,10 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     } catch (error) {
         console.error("AI Check failed:", error);
         feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> AI analysis failed.</p><p class="text-xs mt-1">${error.message}</p></div>`;
+        if (error.message.includes('API key')) {
+             DOMElements.settingsError.textContent = 'Please set your Gemini API key to use the AI Check feature.';
+             DOMElements.settingsModal.classList.remove('hidden');
+        }
     } finally {
         buttonElement.disabled = false;
         buttonElement.innerHTML = originalContent;
