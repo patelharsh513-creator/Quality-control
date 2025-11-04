@@ -1,6 +1,4 @@
 
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { GoogleGenAI } from "https://esm.run/@google/genai";
@@ -51,7 +49,6 @@ const DOMElements = {
     settingsCloseBtn: document.getElementById('settings-close-btn'),
     settingsCancelBtn: document.getElementById('settings-cancel-btn'),
     settingsSaveBtn: document.getElementById('settings-save-btn'),
-    apiKeyInput: document.getElementById('api-key-input'),
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
     // Input Accessory Bar
@@ -85,23 +82,6 @@ const getWeekDates = (anyDateInWeek) => {
         return day.toISOString().split('T')[0];
     });
 };
-
-async function urlToBase64(url) {
-    // Use a CORS proxy to bypass browser cross-origin restrictions on fetching images.
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
-
 
 // --- Rendering Functions ---
 
@@ -245,7 +225,7 @@ function renderDishCard() {
                     </div>
                 </div>
                  <!-- AI Analysis Section -->
-                <div id="ai-feedback-container" class="hidden"></div>
+                <div id="ai-feedback-container"></div>
                 <!-- Ingredients Section -->
                 <div>
                     <h4 class="font-semibold text-gray-200 mb-2">Ingredients</h4>
@@ -277,10 +257,6 @@ function renderDishCard() {
                 </div>
                 <!-- Buttons -->
                 <div class="p-4 bg-gray-900/50 flex justify-end space-x-2">
-                    <button type="button" id="ai-check-btn" class="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a.75.75 0 01.75.75V5h1.5a.75.75 0 010 1.5H10.75v1.5a.75.75 0 01-1.5 0V6.5H7.75a.75.75 0 010-1.5H9.25V2.75A.75.75 0 0110 2zM5.05 5.05A.75.75 0 015.757 4.343l1.061 1.061a.75.75 0 11-1.061 1.06L4.343 5.757a.75.75 0 01.707-1.207zM14.95 14.95a.75.75 0 01-1.06 0L12.12 13.12a.75.75 0 111.06-1.06l1.768 1.768a.75.75 0 010 1.06zM2 10a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5A.75.75 0 012 10zm14 0a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75zM5.05 14.95a.75.75 0 01.707.05L7.525 13.232a.75.75 0 111.06-1.06l-1.768-1.768a.75.75 0 01-1.207.707l-1.414 1.414a.75.75 0 01.05.707zM14.95 5.05a.75.75 0 010 1.06L13.182 7.879a.75.75 0 11-1.06-1.06l1.768-1.768a.75.75 0 011.06 0z" clip-rule="evenodd" /></svg>
-                        AI Check
-                    </button>
                     <button type="button" id="edit-btn" class="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Edit</button>
                     <button type="submit" id="submit-btn" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Submit</button>
                 </div>
@@ -288,23 +264,19 @@ function renderDishCard() {
         </div>
     `;
 
-    renderCameraCapture(formData.capturedImage);
+    renderCameraCapture(dish, formData.capturedImage);
     const form = DOMElements.dishCardContainer.querySelector('#dish-form');
     const editBtn = DOMElements.dishCardContainer.querySelector('#edit-btn');
     const submitBtn = DOMElements.dishCardContainer.querySelector('#submit-btn');
-    const aiCheckBtn = DOMElements.dishCardContainer.querySelector('#ai-check-btn');
     const inputs = form.querySelectorAll('input, textarea');
 
     const setFormDisabled = (disabled) => {
         inputs.forEach(el => el.disabled = disabled);
         editBtn.classList.toggle('hidden', !disabled);
         submitBtn.classList.toggle('hidden', disabled);
-        // AI button is disabled if form is disabled OR if there is no captured image.
-        aiCheckBtn.disabled = disabled || !form.dataset.capturedImage;
     };
 
     editBtn.onclick = () => setFormDisabled(false);
-    aiCheckBtn.onclick = () => handleAiCheck(dish, form.dataset.capturedImage, aiCheckBtn);
 
     form.onsubmit = (e) => {
         e.preventDefault();
@@ -332,13 +304,11 @@ function renderDishCard() {
 
     if (formData.aiCheckResult) {
         renderAiFeedback(formData.aiCheckResult);
-        document.getElementById('ai-feedback-container').classList.remove('hidden');
-        form.dataset.aiFeedback = JSON.stringify(formData.aiCheckResult);
     }
 }
 
 
-function renderCameraCapture(initialImage) {
+function renderCameraCapture(dish, initialImage) {
     const container = document.getElementById('camera-container');
     container.innerHTML = `
         <div id="camera-placeholder" class="w-full aspect-square rounded-md shadow-md bg-gray-700 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-600 cursor-pointer hover:bg-gray-600">
@@ -363,7 +333,6 @@ function renderCameraCapture(initialImage) {
     const previewImg = container.querySelector('#preview-img');
     const retakeBtn = container.querySelector('#retake-btn');
     const form = DOMElements.dishCardContainer.querySelector('#dish-form');
-    const aiCheckBtn = DOMElements.dishCardContainer.querySelector('#ai-check-btn');
 
     let stream = null;
     
@@ -418,7 +387,7 @@ function renderCameraCapture(initialImage) {
         form.dataset.capturedImage = dataUrl;
         stopCamera();
         imagePreview.classList.remove('hidden');
-        aiCheckBtn.disabled = false;
+        handleAiCheck(dish, dataUrl); // Automatically trigger AI check
     };
 
     retakeBtn.onclick = () => {
@@ -426,9 +395,7 @@ function renderCameraCapture(initialImage) {
             previewImg.src = '';
             form.dataset.capturedImage = '';
             form.dataset.aiFeedback = ''; // Clear stored AI feedback
-            aiCheckBtn.disabled = true;
             const feedbackContainer = document.getElementById('ai-feedback-container');
-            feedbackContainer.classList.add('hidden');
             feedbackContainer.innerHTML = ''; // Clear content
             startCamera();
         }
@@ -483,12 +450,31 @@ function fetchMenu() {
     renderApp();
     const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
     const menuRef = ref(database, `menus/${weekId}`);
-    onValue(menuRef, (snapshot) => {
-        state.menu = snapshot.val() || null;
+    onValue(menuRef, async (snapshot) => {
+        const menuData = snapshot.val();
+        if (menuData && menuData.dishes) {
+            // Pre-fetch and cache reference images
+            const imagePromises = menuData.dishes.map(dish => 
+                fetch(`https://corsproxy.io/?${encodeURIComponent(dish.dishImage)}`)
+                .then(response => response.blob())
+                .then(blob => URL.createObjectURL(blob))
+                .then(localUrl => {
+                    dish.dishImage = localUrl; // Replace remote URL with local blob URL
+                    return dish;
+                })
+                .catch(err => {
+                    console.error(`Failed to pre-fetch image for ${dish.dishName}:`, err);
+                    return dish; // Return original dish data on error
+                })
+            );
+            await Promise.all(imagePromises);
+        }
+        state.menu = menuData || null;
         state.isMenuLoading = false;
         renderApp();
     });
 }
+
 
 function fetchCheckData() {
     state.isCheckDataLoading = true;
@@ -512,31 +498,32 @@ function saveCheckData(data) {
 }
 
 // --- AI Functions ---
-async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
-    const originalContent = buttonElement.innerHTML;
-    buttonElement.disabled = true;
-    buttonElement.innerHTML = `
-        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <span>Analyzing...</span>
-    `;
-
+async function handleAiCheck(dish, capturedImageDataUrl) {
     const feedbackContainer = document.getElementById('ai-feedback-container');
-    feedbackContainer.classList.remove('hidden');
-    feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-gray-700/50"><p>AI is analyzing the dish, please wait...</p></div>`;
+    feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-gray-700/50"><div class="flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p>AI is analyzing the dish, please wait...</p></div></div>`;
     
     const form = document.getElementById('dish-form');
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const apiKey = localStorage.getItem('geminiApiKey');
+        if (!apiKey) {
+            throw new Error('Please set your Gemini API key in Settings.');
+        }
+        const ai = new GoogleGenAI(apiKey);
         
+        // The reference image is now a local blob URL, so we fetch it locally
+        const refImageResponse = await fetch(dish.dishImage);
+        const refImageBlob = await refImageResponse.blob();
+        
+        const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
         const [refImageBase64, capturedImageBase64] = await Promise.all([
-            urlToBase64(dish.dishImage).catch(e => {
-                console.error("Reference image fetch error:", e);
-                throw new Error('Could not load reference image for comparison.');
-            }),
+            blobToBase64(refImageBlob),
             Promise.resolve(capturedImageDataUrl.split(',')[1])
         ]);
 
@@ -551,19 +538,10 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         const refImagePart = { inlineData: { mimeType: 'image/jpeg', data: refImageBase64 } };
         const capturedImagePart = { inlineData: { mimeType: 'image/jpeg', data: capturedImageBase64 } };
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: {
-                parts: [
-                    { text: "Reference Image:" },
-                    refImagePart,
-                    { text: "Captured Image:" },
-                    capturedImagePart,
-                    { text: promptText }
-                ]
-            },
-        });
-
+        const model = ai.getGenerativeModel({ model: 'gemini-pro-vision' });
+        const result = await model.generateContent([promptText, refImagePart, capturedImagePart]);
+        const response = await result.response;
+        
         // --- Robust Response Handling ---
         if (!response.text) {
              if (response.candidates && response.candidates.length > 0) {
@@ -576,7 +554,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
              throw new Error("AI did not return a text response.");
         }
 
-        const textResponse = response.text;
+        const textResponse = response.text();
         
         let feedbackData;
         try {
@@ -596,9 +574,6 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
     } catch (error) {
         console.error("AI Check failed:", error);
         feedbackContainer.innerHTML = `<div class="p-4 border rounded-md bg-red-900/30 text-red-300"><p><strong>Error:</strong> AI analysis failed.</p><p class="text-xs mt-1">${error.message}</p></div>`;
-    } finally {
-        buttonElement.disabled = false;
-        buttonElement.innerHTML = originalContent;
     }
 }
 
@@ -651,7 +626,6 @@ function renderAiFeedback(feedbackData) {
             </div>
         </div>
     `;
-    container.classList.remove('hidden');
 }
 
 // --- Export Functions ---
@@ -792,6 +766,12 @@ async function handleExportSummary(button) {
 function setupEventListeners() {
     // Header
     DOMElements.settingsBtn.onclick = () => {
+        const apiKey = localStorage.getItem('geminiApiKey') || '';
+        // Find the API key input in the modal if it exists
+        const apiKeyInput = document.getElementById('api-key-input');
+        if (apiKeyInput) {
+            apiKeyInput.value = apiKey;
+        }
         DOMElements.settingsModal.classList.remove('hidden');
     };
     DOMElements.exportDetailsBtn.onclick = (e) => handleExportDetails(e.currentTarget);
@@ -838,8 +818,12 @@ function setupAccessoryBarAndKeyboardListeners() {
         }
     };
 
-    DOMElements.dishCardContainer.addEventListener('focusin', (e) => {
+    // Use event delegation on a parent container
+    const appContainer = document.getElementById('app-container');
+
+    appContainer.addEventListener('focusin', (e) => {
         if (e.target.matches('[data-form-input]')) {
+            // Recalculate focusable inputs only when focus enters the form area
             focusableInputs = Array.from(DOMElements.dishCardContainer.querySelectorAll('[data-form-input]'));
             currentFocusIndex = focusableInputs.indexOf(e.target);
             updateAccessoryBarButtons();
@@ -847,29 +831,25 @@ function setupAccessoryBarAndKeyboardListeners() {
         }
     });
 
-    DOMElements.dishCardContainer.addEventListener('focusout', (e) => {
+    appContainer.addEventListener('focusout', (e) => {
          if (e.target.matches('[data-form-input]')) {
-            // Use a small timeout to allow focus to shift to the accessory bar buttons
             setTimeout(() => {
                 const activeEl = document.activeElement;
-                if (activeEl !== DOMElements.inputPrevBtn &&
-                    activeEl !== DOMElements.inputNextBtn &&
-                    activeEl !== DOMElements.inputDoneBtn) {
-                    currentFocusIndex = -1;
+                if (!activeEl.matches('#input-accessory-bar button')) {
                     hideAccessoryBar();
                 }
             }, 150);
         }
     });
 
-    DOMElements.dishCardContainer.addEventListener('keydown', (e) => {
+    appContainer.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey && e.target.matches('[data-form-input]')) {
             e.preventDefault();
             const isTextarea = e.target.tagName === 'TEXTAREA';
             const submitBtn = document.getElementById('submit-btn');
 
             if (currentFocusIndex === focusableInputs.length - 1 || isTextarea) {
-                if (submitBtn && !submitBtn.classList.contains('hidden')) {
+                 if (submitBtn && !submitBtn.classList.contains('hidden')) {
                     submitBtn.click();
                 }
             } else {
@@ -882,6 +862,12 @@ function setupAccessoryBarAndKeyboardListeners() {
 function handleSaveSettings() {
     const jsonInput = DOMElements.jsonInput;
     const errorEl = DOMElements.settingsError;
+    const apiKeyInput = document.getElementById('api-key-input');
+    
+    // Save API Key if the input exists
+    if (apiKeyInput) {
+        localStorage.setItem('geminiApiKey', apiKeyInput.value);
+    }
     
     if (!jsonInput.value.trim()) {
         alert('Settings saved.');
