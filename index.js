@@ -253,23 +253,23 @@ function renderDishCard() {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Temperature (°C)</p>
-                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="text" inputmode="decimal" pattern="[0-9.-]*" name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="text" inputmode="decimal" data-form-input name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                         <div class="space-y-2">
                             <p class="text-sm font-medium text-gray-200">Weight (g)</p>
-                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="text" inputmode="decimal" pattern="[0-9.-]*" name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
+                            ${(formData.weights || ['', '', '']).map((w, i) => `<input type="text" inputmode="decimal" data-form-input name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                     </div>
                      <div class="mt-4">
                         <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
                         <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
-                        <input type="text" inputmode="decimal" pattern="[0-9.-]*" name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
+                        <input type="text" inputmode="decimal" data-form-input name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
                 </div>
                 <!-- Comment Section -->
                 <div>
                     <label class="font-semibold text-gray-200 mb-2 block">Comment</label>
-                    <textarea name="comment" rows="3" class="mt-1 block w-full p-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">${formData.comment || ''}</textarea>
+                    <textarea name="comment" rows="3" data-form-input class="mt-1 block w-full p-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">${formData.comment || ''}</textarea>
                 </div>
                 <!-- Buttons -->
                 <div class="p-4 bg-gray-900/50 flex justify-end space-x-2">
@@ -325,93 +325,6 @@ function renderDishCard() {
     };
 
     setFormDisabled(!isEditing);
-
-    // --- Input Accessory Bar and Keyboard Navigation ---
-    const focusableInputs = Array.from(
-        form.querySelectorAll('input[name="temperatures"], input[name="weights"], input[name="totalWeight"], textarea[name="comment"]')
-    );
-
-    let currentFocusIndex = -1;
-    let blurTimeout;
-
-    const showAccessoryBar = () => {
-        clearTimeout(blurTimeout);
-        DOMElements.inputAccessoryBar.classList.add('is-visible');
-    };
-
-    const hideAccessoryBar = () => {
-        DOMElements.inputAccessoryBar.classList.remove('is-visible');
-    };
-
-    const updateAccessoryBarButtons = () => {
-        DOMElements.inputPrevBtn.disabled = currentFocusIndex <= 0;
-        DOMElements.inputNextBtn.disabled = currentFocusIndex >= focusableInputs.length - 1;
-    };
-
-    const navigateTo = (direction) => {
-        const newIndex = currentFocusIndex + direction;
-        if (newIndex >= 0 && newIndex < focusableInputs.length) {
-            focusableInputs[newIndex].focus();
-        }
-    };
-
-    // Clear old listeners before attaching new ones
-    const prevBtnClone = DOMElements.inputPrevBtn.cloneNode(true);
-    DOMElements.inputPrevBtn.parentNode.replaceChild(prevBtnClone, DOMElements.inputPrevBtn);
-    DOMElements.inputPrevBtn = prevBtnClone;
-
-    const nextBtnClone = DOMElements.inputNextBtn.cloneNode(true);
-    DOMElements.inputNextBtn.parentNode.replaceChild(nextBtnClone, DOMElements.inputNextBtn);
-    DOMElements.inputNextBtn = nextBtnClone;
-
-    const doneBtnClone = DOMElements.inputDoneBtn.cloneNode(true);
-    DOMElements.inputDoneBtn.parentNode.replaceChild(doneBtnClone, DOMElements.inputDoneBtn);
-    DOMElements.inputDoneBtn = doneBtnClone;
-
-    DOMElements.inputPrevBtn.onclick = () => navigateTo(-1);
-    DOMElements.inputNextBtn.onclick = () => navigateTo(1);
-    DOMElements.inputDoneBtn.onclick = () => {
-        if (currentFocusIndex !== -1 && focusableInputs[currentFocusIndex]) {
-            focusableInputs[currentFocusIndex].blur();
-        }
-    };
-
-    focusableInputs.forEach((input, index) => {
-        const handleFocus = () => {
-            currentFocusIndex = index;
-            updateAccessoryBarButtons();
-            showAccessoryBar();
-        };
-
-        const handleBlur = () => {
-            blurTimeout = setTimeout(() => {
-                const activeEl = document.activeElement;
-                if (activeEl !== DOMElements.inputPrevBtn &&
-                    activeEl !== DOMElements.inputNextBtn &&
-                    activeEl !== DOMElements.inputDoneBtn &&
-                    !focusableInputs.includes(activeEl)) {
-                    currentFocusIndex = -1;
-                    hideAccessoryBar();
-                }
-            }, 150);
-        };
-        
-        const handleKeyDown = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { 
-                e.preventDefault();
-                navigateTo(1); // Go to next input
-                if (index === focusableInputs.length - 1) { // If last input, submit
-                  if (!submitBtn.classList.contains('hidden')) {
-                      submitBtn.focus();
-                  }
-                }
-            }
-        };
-
-        input.addEventListener('focus', handleFocus);
-        input.addEventListener('blur', handleBlur);
-        input.addEventListener('keydown', handleKeyDown);
-    });
 
     if (formData.aiCheckResult) {
         renderAiFeedback(formData.aiCheckResult);
@@ -623,7 +536,9 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
         const ingredientsList = dish.dishIngredients.map(ing => `${ing.name} (${ing.weight})`).join(', ');
         const promptText = `As a culinary quality control expert in Berlin, Germany, analyze the provided "Captured Image" against the "Reference Image" for the dish '${dish.dishName}'.
         The expected ingredients are: ${ingredientsList}.
-        Based on your comparison and knowledge of local Berlin food trends (e.g., preference for fresh, locally sourced ingredients, vibrant plating, and specific flavor profiles), use the provided tool to return a quality score, positive aspects, areas for improvement, and a summary. Ground your suggestions in real-time search results about Berlin's culinary scene where relevant.`;
+        Based on your comparison and knowledge of local Berlin food trends (e.g., preference for fresh, locally sourced ingredients, vibrant plating, and specific flavor profiles), conduct a grounded search and then provide your analysis.
+        Your entire response MUST be a single, valid JSON object with the following structure: { "score": number, "positives": string[], "improvements": string[], "overall_comment": string }.
+        Do not include any text, markdown formatting, or code fences (like \`\`\`json) before or after the JSON object. The "improvements" should be actionable suggestions.`;
         
         const requestBody = {
             contents: [{
@@ -637,25 +552,7 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
             }],
             tools: [{
                 googleSearch: {},
-            },{
-                functionDeclarations: [{
-                    name: "quality_check_tool",
-                    description: "Extracts the quality check information from the analysis.",
-                    parameters: {
-                        type: "OBJECT",
-                        properties: {
-                            score: { type: "NUMBER", description: "A quality score from 0 to 10." },
-                            positives: { type: "ARRAY", items: { type: "STRING" }, description: "A list of positive aspects of the dish presentation." },
-                            improvements: { type: "ARRAY", items: { type: "STRING" }, description: "A list of actionable suggestions for how to improve the dish's presentation or quality. For example, instead of 'Garnish is messy', suggest 'Arrange the microgreens more carefully in the center'." },
-                            overall_comment: { type: "STRING", description: "A brief overall summary of the quality check." }
-                        },
-                        required: ["score", "positives", "improvements", "overall_comment"]
-                    }
-                }]
-            }],
-            toolConfig: {
-                functionCallingConfig: { "mode": "ANY" }
-            }
+            }]
         };
 
         const response = await fetch(API_URL, {
@@ -672,15 +569,22 @@ async function handleAiCheck(dish, capturedImageDataUrl, buttonElement) {
 
         const responseData = await response.json();
         const candidate = responseData.candidates?.[0];
-        const functionCall = candidate?.content?.parts?.find(p => p.functionCall)?.functionCall;
+        const textResponse = candidate?.content?.parts?.[0]?.text;
         const groundingMetadata = candidate?.groundingMetadata;
 
-        if (!functionCall || !functionCall.args) {
-            console.error("Invalid API response structure:", responseData);
-            throw new Error("AI did not return the expected analysis structure.");
+        if (!textResponse) {
+             console.error("Invalid API response structure, no text part:", responseData);
+            throw new Error("AI did not return a text response.");
+        }
+        
+        let feedbackData;
+        try {
+            feedbackData = JSON.parse(textResponse);
+        } catch (e) {
+            console.error("Failed to parse JSON from AI response:", textResponse);
+            throw new Error("AI returned an invalid JSON format.");
         }
 
-        const feedbackData = functionCall.args;
         feedbackData.groundingMetadata = groundingMetadata; // Attach grounding data
         
         if (form) {
@@ -918,6 +822,75 @@ function setupEventListeners() {
     DOMElements.backToMenuBtn.onclick = showMainView;
 }
 
+// --- Accessory Bar and Keyboard Navigation (Robust Implementation) ---
+function setupAccessoryBarAndKeyboardListeners() {
+    let focusableInputs = [];
+    let currentFocusIndex = -1;
+
+    const showAccessoryBar = () => DOMElements.inputAccessoryBar.classList.add('is-visible');
+    const hideAccessoryBar = () => DOMElements.inputAccessoryBar.classList.remove('is-visible');
+
+    const updateAccessoryBarButtons = () => {
+        DOMElements.inputPrevBtn.disabled = currentFocusIndex <= 0;
+        DOMElements.inputNextBtn.disabled = currentFocusIndex >= focusableInputs.length - 1;
+    };
+
+    const navigateTo = (direction) => {
+        const newIndex = currentFocusIndex + direction;
+        if (newIndex >= 0 && newIndex < focusableInputs.length) {
+            focusableInputs[newIndex].focus();
+        }
+    };
+
+    DOMElements.inputPrevBtn.onclick = () => navigateTo(-1);
+    DOMElements.inputNextBtn.onclick = () => navigateTo(1);
+    DOMElements.inputDoneBtn.onclick = () => {
+        if (currentFocusIndex !== -1 && focusableInputs[currentFocusIndex]) {
+            focusableInputs[currentFocusIndex].blur();
+        }
+    };
+
+    DOMElements.dishCardContainer.addEventListener('focusin', (e) => {
+        if (e.target.matches('[data-form-input]')) {
+            focusableInputs = Array.from(DOMElements.dishCardContainer.querySelectorAll('[data-form-input]'));
+            currentFocusIndex = focusableInputs.indexOf(e.target);
+            updateAccessoryBarButtons();
+            showAccessoryBar();
+        }
+    });
+
+    DOMElements.dishCardContainer.addEventListener('focusout', (e) => {
+         if (e.target.matches('[data-form-input]')) {
+            // Use a small timeout to allow focus to shift to the accessory bar buttons
+            setTimeout(() => {
+                const activeEl = document.activeElement;
+                if (activeEl !== DOMElements.inputPrevBtn &&
+                    activeEl !== DOMElements.inputNextBtn &&
+                    activeEl !== DOMElements.inputDoneBtn) {
+                    currentFocusIndex = -1;
+                    hideAccessoryBar();
+                }
+            }, 150);
+        }
+    });
+
+    DOMElements.dishCardContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && e.target.matches('[data-form-input]')) {
+            e.preventDefault();
+            const isTextarea = e.target.tagName === 'TEXTAREA';
+            const submitBtn = document.getElementById('submit-btn');
+
+            if (currentFocusIndex === focusableInputs.length - 1 || isTextarea) {
+                if (submitBtn && !submitBtn.classList.contains('hidden')) {
+                    submitBtn.click();
+                }
+            } else {
+                navigateTo(1);
+            }
+        }
+    });
+}
+
 function handleSaveSettings() {
     // Save API Key
     const apiKey = DOMElements.apiKeyInput.value.trim();
@@ -1050,5 +1023,6 @@ function initializeAppState() {
 }
 
 setupEventListeners();
+setupAccessoryBarAndKeyboardListeners(); // Setup robust listeners once
 requestCameraPermission(); // Request permission when the app starts
 initializeAppState();
