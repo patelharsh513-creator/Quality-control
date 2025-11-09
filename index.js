@@ -1,4 +1,5 @@
 
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { GoogleGenAI } from "https://esm.run/@google/genai";
@@ -25,6 +26,7 @@ let state = {
     selectedDish: null,
     isMenuLoading: true,
     isCheckDataLoading: true,
+    currentExportType: null, // 'details' or 'summary'
 };
 
 // --- DOM Element References ---
@@ -52,6 +54,15 @@ const DOMElements = {
     jsonInput: document.getElementById('json-input'),
     settingsError: document.getElementById('settings-error'),
     apiKeyInput: document.getElementById('api-key-input'),
+    // Export Date Modal
+    exportDateModal: document.getElementById('export-date-modal'),
+    exportModalTitle: document.getElementById('export-modal-title'),
+    exportDateCloseBtn: document.getElementById('export-date-close-btn'),
+    exportDateCancelBtn: document.getElementById('export-date-cancel-btn'),
+    exportDateConfirmBtn: document.getElementById('export-date-confirm-btn'),
+    exportStartDateInput: document.getElementById('export-start-date'),
+    exportEndDateInput: document.getElementById('export-end-date'),
+    exportDateError: document.getElementById('export-date-error'),
     // Input Accessory Bar
     inputAccessoryBar: document.getElementById('input-accessory-bar'),
     inputPrevBtn: document.getElementById('input-prev-btn'),
@@ -75,13 +86,16 @@ const getStartOfWeek = (date) => {
     return new Date(d.setDate(diff));
 };
 
-const getWeekDates = (anyDateInWeek) => {
-    const start = getStartOfWeek(new Date(anyDateInWeek + 'T12:00:00Z'));
-    return Array.from({ length: 5 }).map((_, i) => {
-        const day = new Date(start);
-        day.setDate(start.getDate() + i);
-        return day.toISOString().split('T')[0];
-    });
+const getDatesInRange = (startDate, endDate) => {
+    const dates = [];
+    let currentDate = new Date(startDate + 'T12:00:00Z');
+    const lastDate = new Date(endDate + 'T12:00:00Z');
+
+    while (currentDate <= lastDate) {
+        dates.push(new Date(currentDate).toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    return dates;
 };
 
 // --- Rendering Functions ---
@@ -207,6 +221,19 @@ function renderDishCard() {
         </label>
     `).join('');
 
+    let temperatureLabel = 'Temperature (°C)';
+    if (dish.dishType === 'hot') {
+        temperatureLabel = `Temperature (°C) <span class="text-xs text-gray-400 ml-1">(Target: 50)</span>`;
+    } else if (dish.dishType === 'cold') {
+        temperatureLabel = `Temperature (°C) <span class="text-xs text-gray-400 ml-1">(Target: 10)</span>`;
+    }
+
+    let weightLabel = 'Weight (g)';
+    if (dish.theoreticalWeight) {
+        const theoreticalWeightText = `${dish.theoreticalWeight.toFixed(2)}g`;
+        weightLabel = `Weight (g) <span class="text-xs text-gray-400 ml-1">(Theoretical: ${theoreticalWeightText})</span>`;
+    }
+
     DOMElements.dishCardContainer.innerHTML = `
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             <div class="p-4 ${headerBgClass}">
@@ -237,18 +264,13 @@ function renderDishCard() {
                     <h4 class="font-semibold text-gray-200 mb-2">Measurements</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="space-y-2">
-                            <p class="text-sm font-medium text-gray-200">Temperature (°C)</p>
+                            <p class="text-sm font-medium text-gray-200">${temperatureLabel}</p>
                             ${(formData.temperatures || ['', '', '']).map((t, i) => `<input type="text" inputmode="decimal" data-form-input name="temperatures" value="${t}" placeholder="Temp ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
                         <div class="space-y-2">
-                            <p class="text-sm font-medium text-gray-200">Weight (g)</p>
+                            <p class="text-sm font-medium text-gray-200">${weightLabel}</p>
                             ${(formData.weights || ['', '', '']).map((w, i) => `<input type="text" inputmode="decimal" data-form-input name="weights" value="${w}" placeholder="Weight ${i + 1}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">`).join('')}
                         </div>
-                    </div>
-                     <div class="mt-4">
-                        <p class="text-sm font-medium text-gray-200">Total Measured Weight (g)</p>
-                        <p class="text-xs text-gray-400 mb-1">Theoretical: ${dish.theoreticalWeight ? dish.theoreticalWeight.toFixed(2) + 'g' : 'N/A'}</p>
-                        <input type="text" inputmode="decimal" data-form-input name="totalWeight" value="${formData.totalWeight || ''}" placeholder="Measured Total Weight" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm placeholder-gray-500 focus:outline-none focus:ring-indigo-400 focus:border-indigo-400 sm:text-sm text-gray-100">
                     </div>
                 </div>
                 <!-- Comment Section -->
@@ -291,7 +313,6 @@ function renderDishCard() {
             selectedIngredients: data.getAll('selectedIngredients'),
             temperatures: data.getAll('temperatures'),
             weights: data.getAll('weights'),
-            totalWeight: data.get('totalWeight'),
             comment: data.get('comment'),
             aiCheckResult: formEl.dataset.aiFeedback ? JSON.parse(formEl.dataset.aiFeedback) : null,
             timestamp: new Date().toISOString(),
@@ -637,7 +658,7 @@ function renderAiFeedback(feedbackData) {
 
 // --- Export Functions ---
 
-async function handleExportDetails(button) {
+async function handleExportDetails(button, startDate, endDate) {
     const originalContent = button.innerHTML;
     button.disabled = true;
     button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
@@ -648,12 +669,12 @@ async function handleExportDetails(button) {
             return;
         }
         
-        const weekDates = getWeekDates(state.selectedDate);
-        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)));
-        const weekSnapshots = await Promise.all(weekDataPromises);
+        const dateRange = getDatesInRange(startDate, endDate);
+        const dataPromises = dateRange.map(date => get(ref(database, `quality-checks/${date}`)));
+        const dateSnapshots = await Promise.all(dataPromises);
 
         const allChecks = [];
-        weekSnapshots.forEach(snapshot => {
+        dateSnapshots.forEach(snapshot => {
             const dailyData = snapshot.val();
             if (dailyData) {
                 Object.values(dailyData).forEach(check => allChecks.push(check));
@@ -661,22 +682,22 @@ async function handleExportDetails(button) {
         });
 
         if (allChecks.length === 0) {
-            alert("No quality check data found for the selected week to export.");
+            alert(`No quality check data found for the selected date range (${startDate} to ${endDate}) to export.`);
             return;
         }
 
-        const headers = ["Date", "Dish Letter", "Dish Name", "Timestamp", "Temp 1", "Temp 2", "Temp 3", "Weight 1", "Weight 2", "Weight 3", "Total Measured Weight", "Checked Ingredients", "Comment", "AI Score", "AI Positives", "AI Improvements", "AI Summary"];
+        const headers = ["Date", "Dish Letter", "Dish Name", "Timestamp", "Temp 1", "Temp 2", "Temp 3", "Weight 1", "Weight 2", "Weight 3", "Checked Ingredients", "Comment", "AI Score", "AI Positives", "AI Improvements", "AI Summary"];
         
         const dishMap = new Map(state.menu.dishes.map(d => [d.dishLetter, d.dishName]));
 
         const rows = allChecks.map(check => {
-            const { date, dishLetter, timestamp, temperatures, weights, totalWeight, selectedIngredients, comment, aiCheckResult } = check;
+            const { date, dishLetter, timestamp, temperatures, weights, selectedIngredients, comment, aiCheckResult } = check;
             const dishName = dishMap.get(dishLetter) || 'Unknown';
             
             return [
                 date, dishLetter, dishName, new Date(timestamp).toLocaleString(),
                 temperatures?.[0] || '', temperatures?.[1] || '', temperatures?.[2] || '',
-                weights?.[0] || '', weights?.[1] || '', weights?.[2] || '', totalWeight || '',
+                weights?.[0] || '', weights?.[1] || '', weights?.[2] || '',
                 selectedIngredients?.join(', ') || '', comment || '', aiCheckResult?.score || '',
                 aiCheckResult?.positives?.join('; ') || '', aiCheckResult?.improvements?.join('; ') || '', aiCheckResult?.overall_comment || ''
             ];
@@ -687,8 +708,7 @@ async function handleExportDetails(button) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Details');
         
-        const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
-        XLSX.writeFile(wb, `CQC_Details_${weekId}.xlsx`);
+        XLSX.writeFile(wb, `CQC_Details_${startDate}_to_${endDate}.xlsx`);
 
     } catch (error) {
         console.error("Failed to export details:", error);
@@ -699,7 +719,7 @@ async function handleExportDetails(button) {
     }
 }
 
-async function handleExportSummary(button) {
+async function handleExportSummary(button, startDate, endDate) {
     const originalContent = button.innerHTML;
     button.disabled = true;
     button.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="hidden sm:inline ml-2">Exporting...</span>`;
@@ -710,12 +730,12 @@ async function handleExportSummary(button) {
             return;
         }
 
-        const weekDates = getWeekDates(state.selectedDate);
-        const weekDataPromises = weekDates.map(date => get(ref(database, `quality-checks/${date}`)));
-        const weekSnapshots = await Promise.all(weekDataPromises);
+        const dateRange = getDatesInRange(startDate, endDate);
+        const dataPromises = dateRange.map(date => get(ref(database, `quality-checks/${date}`)));
+        const dateSnapshots = await Promise.all(dataPromises);
 
         const allChecks = [];
-        weekSnapshots.forEach(snapshot => {
+        dateSnapshots.forEach(snapshot => {
             const dailyData = snapshot.val();
             if (dailyData) {
                 Object.values(dailyData).forEach(check => allChecks.push(check));
@@ -723,7 +743,7 @@ async function handleExportSummary(button) {
         });
 
         if (allChecks.length === 0) {
-            alert("No quality check data found for the selected week to export.");
+            alert(`No quality check data found for the selected date range (${startDate} to ${endDate}) to export.`);
             return;
         }
 
@@ -756,8 +776,7 @@ async function handleExportSummary(button) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Summary');
 
-        const weekId = getWeekId(new Date(state.selectedDate + 'T12:00:00Z'));
-        XLSX.writeFile(wb, `CQC_Summary_${weekId}.xlsx`);
+        XLSX.writeFile(wb, `CQC_Summary_${startDate}_to_${endDate}.xlsx`);
 
     } catch (error) {
         console.error("Failed to export summary:", error);
@@ -765,6 +784,40 @@ async function handleExportSummary(button) {
     } finally {
         button.disabled = false;
         button.innerHTML = originalContent;
+    }
+}
+
+function openExportModal(type) {
+    state.currentExportType = type;
+    DOMElements.exportModalTitle.textContent = `Export ${type.charAt(0).toUpperCase() + type.slice(1)} Report`;
+    DOMElements.exportStartDateInput.value = state.selectedDate;
+    DOMElements.exportEndDateInput.value = state.selectedDate;
+    DOMElements.exportDateError.textContent = '';
+    DOMElements.exportDateModal.classList.remove('hidden');
+}
+
+function handleConfirmExport() {
+    const startDate = DOMElements.exportStartDateInput.value;
+    const endDate = DOMElements.exportEndDateInput.value;
+    const errorEl = DOMElements.exportDateError;
+
+    if (!startDate || !endDate) {
+        errorEl.textContent = 'Please select both a start and end date.';
+        return;
+    }
+
+    if (new Date(endDate) < new Date(startDate)) {
+        errorEl.textContent = 'End date cannot be before the start date.';
+        return;
+    }
+
+    errorEl.textContent = '';
+    DOMElements.exportDateModal.classList.add('hidden');
+
+    if (state.currentExportType === 'details') {
+        handleExportDetails(DOMElements.exportDetailsBtn, startDate, endDate);
+    } else if (state.currentExportType === 'summary') {
+        handleExportSummary(DOMElements.exportSummaryBtn, startDate, endDate);
     }
 }
 
@@ -780,13 +833,18 @@ function setupEventListeners() {
         }
         DOMElements.settingsModal.classList.remove('hidden');
     };
-    DOMElements.exportDetailsBtn.onclick = (e) => handleExportDetails(e.currentTarget);
-    DOMElements.exportSummaryBtn.onclick = (e) => handleExportSummary(e.currentTarget);
+    DOMElements.exportDetailsBtn.onclick = () => openExportModal('details');
+    DOMElements.exportSummaryBtn.onclick = () => openExportModal('summary');
     
     // Settings Modal
     DOMElements.settingsCloseBtn.onclick = () => DOMElements.settingsModal.classList.add('hidden');
     DOMElements.settingsCancelBtn.onclick = () => DOMElements.settingsModal.classList.add('hidden');
     DOMElements.settingsSaveBtn.onclick = handleSaveSettings;
+    
+    // Export Date Modal
+    DOMElements.exportDateCloseBtn.onclick = () => DOMElements.exportDateModal.classList.add('hidden');
+    DOMElements.exportDateCancelBtn.onclick = () => DOMElements.exportDateModal.classList.add('hidden');
+    DOMElements.exportDateConfirmBtn.onclick = handleConfirmExport;
 
     // Date Selector
     DOMElements.prevWeekBtn.onclick = () => changeWeek('prev');
