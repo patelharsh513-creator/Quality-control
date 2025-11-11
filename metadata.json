@@ -1,7 +1,0 @@
-{
-  "name": "Culinary Quality Control",
-  "description": "An application for daily quality checks of culinary dishes, allowing users to input menu data, capture images, record metrics like temperature and weight, and export detailed or summary reports.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
