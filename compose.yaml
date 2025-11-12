@@ -1,5 +1,5 @@
 services:
-  quality-control:
+  quality-control-berlin:
     image: caddy:alpine
     restart: unless-stopped
     volumes:
